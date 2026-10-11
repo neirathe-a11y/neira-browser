@@ -1,0 +1,64 @@
+{
+  "name": "neira-browser",
+  "version": "1.0.0",
+  "description": "AI-native desktop browser",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder",
+    "release": "electron-builder --publish always"
+  },
+  "keywords": [],
+  "author": "Manas Tiwari",
+  "license": "MIT",
+  "dependencies": {
+    "@mlc-ai/web-llm": "^0.2.46",
+    "electron-updater": "^6.8.9"
+  },
+  "devDependencies": {
+    "electron": "^30.5.1",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.neira.browser",
+    "productName": "Neira",
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "neirathe-a11y",
+        "repo": "neira-browser"
+      }
+    ],
+    "fileAssociations": [
+      {
+        "ext": "pdf",
+        "name": "PDF Document",
+        "role": "Viewer"
+      }
+    ],
+    "protocols": [
+      {
+        "name": "HTTP Protocol",
+        "schemes": [
+          "http",
+          "https"
+        ]
+      }
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "assets/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  },
+  "allowScripts": {
+    "electron@30.5.1": true
+  }
+}
