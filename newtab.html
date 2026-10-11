@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="dark">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: neira-asset:; media-src neira-asset:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+    <title>New Tab</title>
+    <script src="boot.js"></script>
+    <style>
+        :root {
+            --accent: #8b5cf6;               /* replaced by the user's accent colour (boot.js) */
+            --on-accent: #ffffff;
+            --accent-hover: color-mix(in srgb, var(--accent), #000 18%);
+            --panel: color-mix(in srgb, var(--accent) 10%, rgba(12, 10, 20, 0.72));
+            --panel-solid: color-mix(in srgb, var(--accent) 10%, #0e0c16);
+            --line: rgba(255, 255, 255, 0.14);
+            --text: #f5f3ff;
+            --muted: rgba(245, 243, 255, 0.66);
+            --tile-w: 144px;
+        }
+        [hidden] { display: none !important; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        :focus-visible { outline: 2px solid #fff; outline-offset: 3px; }
+        html, body { height: 100%; }
+        body { background: #07020d; color: var(--text); overflow: hidden; }
+        .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+        /* ---------- Wallpaper layers ---------- */
+        .wallpaper { position: fixed; inset: -24px; overflow: hidden; background: #0b0714; filter: blur(var(--blur, 0px)); transform: translateZ(0); }
+        .wallpaper img, .wallpaper video, .wallpaper canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+        .wp-dim { position: fixed; inset: 0; background: #000; opacity: 0.35; pointer-events: none; }
+
+        .wallpaper.wp-none, .thumb.wp-none { background: #111218; }
+
+        .wallpaper.wp-neon, .thumb.wp-neon { background: radial-gradient(ellipse at 50% 30%, #3b0a6e 0%, #14041f 55%, #07020d 100%); }
+        .wp-neon::before { content: ""; position: absolute; inset: 0; background-image: linear-gradient(rgba(168, 85, 247, 0.22) 1px, transparent 1px), linear-gradient(90deg, rgba(168, 85, 247, 0.22) 1px, transparent 1px); background-size: 64px 64px; -webkit-mask-image: radial-gradient(circle at 50% 45%, #000 0%, transparent 72%); mask-image: radial-gradient(circle at 50% 45%, #000 0%, transparent 72%); animation: grid-move 14s linear infinite; }
+        .wp-neon::after { content: ""; position: absolute; inset: -10%; background: radial-gradient(circle at 18% 82%, rgba(236, 72, 153, 0.38), transparent 38%), radial-gradient(circle at 82% 18%, rgba(99, 102, 241, 0.42), transparent 42%); animation: drift 16s ease-in-out infinite alternate; }
+
+        .wallpaper.wp-aurora, .thumb.wp-aurora { background: linear-gradient(120deg, #0f172a, #064e3b, #1e1b4b, #0f172a); background-size: 300% 300%; animation: aurora 20s ease infinite; }
+        .wp-aurora::after { content: ""; position: absolute; inset: -15%; background: radial-gradient(circle at 30% 70%, rgba(52, 211, 153, 0.35), transparent 40%), radial-gradient(circle at 75% 25%, rgba(129, 140, 248, 0.38), transparent 42%); animation: drift 18s ease-in-out infinite alternate; }
+
+        .wallpaper.wp-midnight, .thumb.wp-midnight { background: linear-gradient(160deg, #050816, #0b1230 60%, #14213d); }
+        .wp-midnight::after { content: ""; position: absolute; inset: -20%; background: radial-gradient(circle at 60% 40%, rgba(59, 130, 246, 0.22), transparent 45%); animation: drift 24s ease-in-out infinite alternate; }
+
+        .wallpaper.wp-stars, .thumb.wp-stars { background: radial-gradient(ellipse at 50% 100%, #1b1040 0%, #07060f 60%); }
+
+        @keyframes grid-move { to { background-position: 0 64px, 64px 0; } }
+        @keyframes drift { from { transform: translate(-3%, -2%) scale(1); } to { transform: translate(3%, 2%) scale(1.08); } }
+        @keyframes aurora { 0% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } 100% { background-position: 0% 50%; } }
+        @media (prefers-reduced-motion: reduce) {
+            .wallpaper, .wallpaper::before, .wallpaper::after { animation: none !important; }
+        }
+
+        /* ---------- Page ---------- */
+        .stage { position: relative; z-index: 1; height: 100vh; overflow-y: auto; display: flex; flex-direction: column; align-items: center; padding: 9vh 24px 64px; gap: 28px; }
+        .clock { text-align: center; text-shadow: 0 2px 18px rgba(0, 0, 0, 0.55); }
+        .clock #time { font-size: clamp(44px, 7vw, 72px); font-weight: 300; letter-spacing: -0.02em; line-height: 1; }
+        .clock #date { margin-top: 6px; font-size: 15px; color: var(--muted); }
+
+        .searchbar { position: relative; z-index: 10; width: min(680px, 100%); display: flex; align-items: center; gap: 4px; height: 54px; padding: 0 8px 0 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 16px; backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px); box-shadow: 0 10px 36px rgba(0, 0, 0, 0.35); }
+        .searchbar:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent), 0 10px 36px rgba(0, 0, 0, 0.35); }
+        .searchbar select { background: transparent; color: var(--text); border: none; border-right: 1px solid var(--line); border-radius: 0; font-size: 13px; font-weight: 600; padding: 6px 8px; height: 30px; cursor: pointer; outline-offset: 2px; }
+        .searchbar select option { background: var(--panel-solid); color: var(--text); }
+        .searchbar input { flex: 1; min-width: 0; background: transparent; border: none; outline: none; color: var(--text); font-size: 16px; padding: 0 10px; height: 100%; }
+        .searchbar input::placeholder { color: var(--muted); }
+        .searchbar .go { background: var(--accent); color: var(--on-accent); border: none; border-radius: 10px; height: 36px; padding: 0 16px; font-weight: 600; font-size: 14px; cursor: pointer; }
+        .searchbar .go:hover { background: var(--accent-hover); }
+
+        .suggest { position: absolute; top: calc(100% + 8px); left: 0; right: 0; z-index: 20; background: var(--panel-solid); border: 1px solid var(--line); border-radius: 14px; padding: 6px; box-shadow: 0 18px 44px rgba(0, 0, 0, 0.55); }
+        .sg-item { display: flex; align-items: baseline; gap: 10px; width: 100%; text-align: left; padding: 8px 12px; border-radius: 9px; background: none; border: none; color: var(--text); cursor: pointer; font-size: 14px; }
+        .sg-item.sel, .sg-item:hover { background: color-mix(in srgb, var(--accent) 28%, transparent); }
+        .sg-main { flex: none; max-width: 55%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .sg-sub { flex: 1; min-width: 0; color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .sg-kind { flex: none; font-size: 11px; color: var(--accent); }
+
+        /* ---------- Speed dial ---------- */
+        .dial { width: min(1000px, 100%); display: grid; grid-template-columns: repeat(auto-fill, var(--tile-w)); gap: 22px 18px; justify-content: center; }
+        .tile { position: relative; width: var(--tile-w); cursor: pointer; border-radius: 6px; transition: transform 0.15s ease; outline-offset: 5px; }
+        .tile:hover, .tile:focus-visible { transform: translateY(-4px); }
+        .tile.dragging { opacity: 0.4; }
+        .tile.over .tile-art { box-shadow: 0 0 0 3px #fff; }
+        .tile-art { height: 88px; display: flex; align-items: center; justify-content: center; padding: 8px; text-align: center; background: linear-gradient(135deg, hsl(var(--h1) 72% 46%), hsl(var(--h2) 70% 34%)); clip-path: polygon(0 0, 100% 0, 100% 78%, 86% 100%, 0 100%); box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35); }
+        .tile-host { font-size: 18px; font-weight: 800; letter-spacing: -0.01em; color: #fff; text-shadow: 0 2px 8px rgba(0, 0, 0, 0.35); overflow-wrap: anywhere; line-height: 1.1; }
+        .tile-title { margin-top: 8px; text-align: center; font-size: 12.5px; color: var(--text); text-shadow: 0 1px 6px rgba(0, 0, 0, 0.8); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .tile-tools { position: absolute; top: 4px; right: 4px; display: none; gap: 4px; }
+        .tile:hover .tile-tools, .tile:focus-within .tile-tools { display: flex; }
+        .tile-tools button { width: 24px; height: 24px; border-radius: 6px; border: none; background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 12px; cursor: pointer; }
+        .tile-tools button:hover { background: #000; }
+        .tile-art.has-image { padding: 0; background: #111; }
+        .tile-art.has-image img { display: block; width: 100%; height: 100%; object-fit: cover; }
+        .tile-add .tile-art { background: rgba(255, 255, 255, 0.07); box-shadow: inset 0 0 0 1px var(--line); }
+        .tile-add .tile-host { font-size: 34px; font-weight: 300; text-shadow: none; }
+
+        /* ---------- Customize ---------- */
+        .customize-btn { position: fixed; top: 14px; right: 16px; z-index: 5; display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line); color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); }
+        .customize-btn:hover { border-color: var(--accent); }
+        .drawer { position: fixed; top: 0; right: 0; bottom: 0; width: 340px; z-index: 30; background: rgba(15, 12, 24, 0.96); border-left: 1px solid var(--line); display: flex; flex-direction: column; box-shadow: -18px 0 50px rgba(0, 0, 0, 0.5); }
+        .drawer-head { display: flex; align-items: center; justify-content: space-between; padding: 16px 18px; border-bottom: 1px solid var(--line); font-weight: 700; }
+        .drawer-body { padding: 18px; overflow-y: auto; display: flex; flex-direction: column; gap: 22px; }
+        .drawer h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 10px; }
+        .wp-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+        .wp-card { background: none; border: 2px solid transparent; border-radius: 12px; padding: 0; cursor: pointer; color: var(--text); text-align: center; font-size: 12px; }
+        .wp-card .thumb { position: relative; display: flex; align-items: center; justify-content: center; height: 62px; border-radius: 10px; overflow: hidden; border: 1px solid var(--line); background: #111; font-size: 22px; }
+        .wp-card .thumb img, .wp-card .thumb video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+        .wp-card span.label { display: block; padding: 6px 0 2px; }
+        .wp-card:hover .thumb { border-color: #fff; }
+        .wp-card.active { border-color: var(--accent); }
+        .wp-card.active span.label { color: var(--accent); font-weight: 700; }
+        .thumb.wp-neon::before, .thumb.wp-neon::after, .thumb.wp-aurora::after, .thumb.wp-midnight::after { animation: none; }
+        .thumb.wp-neon::before { content: ""; position: absolute; inset: 0; background-image: linear-gradient(rgba(168,85,247,.3) 1px, transparent 1px), linear-gradient(90deg, rgba(168,85,247,.3) 1px, transparent 1px); background-size: 14px 14px; }
+        .thumb.wp-neon::after, .thumb.wp-aurora::after { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at 25% 75%, rgba(236,72,153,.4), transparent 45%), radial-gradient(circle at 75% 25%, rgba(99,102,241,.45), transparent 50%); }
+        .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 14px; }
+        .row output { color: var(--muted); font-size: 12px; min-width: 34px; text-align: right; }
+        input[type="range"] { width: 100%; accent-color: var(--accent); }
+        .slider-row { display: flex; flex-direction: column; gap: 6px; font-size: 14px; }
+        .slider-top { display: flex; justify-content: space-between; }
+        .switch { position: relative; display: inline-block; width: 44px; height: 24px; flex: none; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; inset: 0; background: #4b5563; transition: 0.2s; border-radius: 24px; }
+        .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background: #fff; transition: 0.2s; border-radius: 50%; }
+        input:checked + .slider { background: var(--accent); }
+        input:checked + .slider:before { transform: translateX(20px); }
+        input:focus-visible + .slider { outline: 2px solid #fff; outline-offset: 2px; }
+        .btn { background: transparent; color: var(--text); border: 1px solid var(--line); padding: 8px 16px; border-radius: 10px; cursor: pointer; font-size: 13px; font-weight: 600; }
+        .btn:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); }
+        .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+        .btn-primary:hover { background: var(--accent-hover); }
+        .icon-btn { background: none; border: none; color: var(--text); font-size: 16px; cursor: pointer; width: 30px; height: 30px; border-radius: 8px; }
+        .icon-btn:hover { background: rgba(255, 255, 255, 0.1); }
+
+        .modal { position: fixed; inset: 0; z-index: 60; background: rgba(0, 0, 0, 0.62); display: flex; align-items: center; justify-content: center; }
+        .modal-card { width: 380px; max-width: 92vw; background: var(--panel-solid); border: 1px solid var(--line); border-radius: 16px; padding: 22px; display: flex; flex-direction: column; gap: 12px; }
+        .modal-card h2 { font-size: 16px; }
+        .modal-card input { background: rgba(255, 255, 255, 0.06); border: 1px solid var(--line); color: var(--text); padding: 10px 12px; border-radius: 10px; font-size: 14px; outline: none; }
+        .modal-card input:focus { border-color: var(--accent); }
+        .dial-image { display: flex; align-items: center; gap: 12px; }
+        .dial-image-preview { flex: none; width: 96px; height: 60px; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); background: rgba(255, 255, 255, 0.06); display: flex; align-items: center; justify-content: center; font-size: 11px; color: var(--muted); text-align: center; }
+        .dial-image-preview img { width: 100%; height: 100%; object-fit: cover; }
+        .dial-image-actions { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+        .btn-sm { padding: 5px 12px; font-size: 12px; }
+        .swatches { display: flex; flex-wrap: wrap; gap: 10px; }
+        .swatch { position: relative; width: 28px; height: 28px; border-radius: 50%; padding: 0; cursor: pointer; background: var(--sw, #888); border: 2px solid rgba(255, 255, 255, 0.28); }
+        .swatch:hover { border-color: #fff; }
+        .swatch.active { border-color: #fff; box-shadow: 0 0 0 2px var(--sw, #888); }
+        .swatch.custom { background: conic-gradient(#ef4444, #eab308, #22c55e, #06b6d4, #6366f1, #ec4899, #ef4444); overflow: hidden; }
+        .swatch.custom input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+        .form-error { color: #fb7185; font-size: 13px; min-height: 16px; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
+        .toast { position: fixed; bottom: 22px; left: 50%; transform: translate(-50%, 12px); background: var(--panel-solid); border: 1px solid var(--line); padding: 9px 18px; border-radius: 20px; font-size: 13px; opacity: 0; pointer-events: none; transition: opacity 0.15s, transform 0.15s; z-index: 80; }
+        .toast.show { opacity: 1; transform: translate(-50%, 0); }
+    </style>
+</head>
+<body>
+    <div class="wallpaper wp-neon" id="wallpaper" aria-hidden="true"></div>
+    <div class="wp-dim" id="wp-dim" aria-hidden="true"></div>
+
+    <main class="stage" id="stage">
+        <div class="clock" id="clock">
+            <div id="time"></div>
+            <div id="date"></div>
+        </div>
+
+        <form class="searchbar" id="search-form" role="search" autocomplete="off">
+            <label class="sr-only" for="engine">Search engine</label>
+            <select id="engine">
+                <option value="https://www.google.com/search?q=">Google</option>
+                <option value="https://www.bing.com/search?q=">Bing</option>
+                <option value="https://duckduckgo.com/?q=">DuckDuckGo</option>
+                <option value="https://search.brave.com/search?q=">Brave</option>
+            </select>
+            <label class="sr-only" for="q">Search the web or type a URL</label>
+            <input type="text" id="q" placeholder="Search the web or type a URL" spellcheck="false" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="suggest" />
+            <button type="submit" class="go">Search</button>
+            <div class="suggest" id="suggest" role="listbox" hidden></div>
+        </form>
+
+        <div class="dial" id="dial" role="list" aria-label="Speed Dial"></div>
+    </main>
+
+    <button class="customize-btn" id="customize-btn" aria-haspopup="dialog">🎨 Customize</button>
+
+    <aside class="drawer" id="drawer" role="dialog" aria-label="Customize new tab" hidden>
+        <div class="drawer-head">
+            <span>Customize</span>
+            <button class="icon-btn" id="drawer-close" aria-label="Close">✕</button>
+        </div>
+        <div class="drawer-body">
+            <section>
+                <h3>Wallpaper</h3>
+                <div class="wp-grid" id="wp-grid"></div>
+            </section>
+            <section>
+                <h3>Accent color</h3>
+                <div class="swatches" id="accent-swatches" role="radiogroup" aria-label="Accent color"></div>
+            </section>
+            <section>
+                <div class="slider-row">
+                    <div class="slider-top"><label for="dim">Darken</label><output id="dim-out"></output></div>
+                    <input type="range" id="dim" min="0" max="80" step="1" />
+                </div>
+                <div class="slider-row" style="margin-top:14px">
+                    <div class="slider-top"><label for="blur">Blur</label><output id="blur-out"></output></div>
+                    <input type="range" id="blur" min="0" max="20" step="1" />
+                </div>
+            </section>
+            <section>
+                <div class="row">
+                    <label for="show-clock">Show clock</label>
+                    <label class="switch"><input type="checkbox" id="show-clock"><span class="slider"></span></label>
+                </div>
+            </section>
+            <section>
+                <button class="btn" id="all-settings">All settings…</button>
+            </section>
+        </div>
+    </aside>
+
+    <div class="modal" id="dial-modal" hidden>
+        <div class="modal-card" role="dialog" aria-labelledby="dial-modal-title">
+            <h2 id="dial-modal-title">Add to Speed Dial</h2>
+            <input type="text" id="dial-title" placeholder="Name (optional)" maxlength="40" autocomplete="off" />
+            <input type="text" id="dial-url" placeholder="Address, e.g. github.com" autocomplete="off" spellcheck="false" />
+            <div class="dial-image">
+                <div class="dial-image-preview" id="dial-image-preview" aria-hidden="true"></div>
+                <div class="dial-image-actions">
+                    <button class="btn btn-sm" id="dial-image-choose" type="button">Choose image…</button>
+                    <button class="btn btn-sm" id="dial-image-clear" type="button" hidden>Use default look</button>
+                </div>
+            </div>
+            <div class="form-error" id="dial-error" role="alert"></div>
+            <div class="modal-actions">
+                <button class="btn" id="dial-cancel" type="button">Cancel</button>
+                <button class="btn btn-primary" id="dial-save" type="button">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script src="newtab.js"></script>
+</body>
+</html>

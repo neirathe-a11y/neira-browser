@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'">
+    <title>Settings - Neira Browser</title>
+    <style>
+        :root {
+            --bg-sidebar: #191919;
+            --bg-content: #202020;
+            --bg-card: #282828;
+            --text-main: #f0f0f0;
+            --text-muted: #9e9e9e;
+            --accent-color: #0088ff;
+            --border-color: #333333;
+            --input-bg: #181818;
+            --card-hover: #323232;
+            --toggle-on: #67ceec;
+            --kbd-bg: #1e1e1e;
+            --danger: #ff3366;
+        }
+
+        body.light-theme {
+            --bg-sidebar: #f0f0f0;
+            --bg-content: #ffffff;
+            --bg-card: #f8f9fa;
+            --text-main: #1c1c1c;
+            --text-muted: #666666;
+            --accent-color: #0066cc;
+            --border-color: #e0e0e0;
+            --input-bg: #ffffff;
+            --card-hover: #eeeeee;
+            --toggle-on: #0066cc;
+            --kbd-bg: #e5e5e5;
+            --danger: #d6204f;
+        }
+
+        [hidden] { display: none !important; }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            user-select: none;
+        }
+
+        body {
+            display: flex;
+            height: 100vh;
+            background: var(--bg-content);
+            color: var(--text-main);
+            overflow: hidden;
+            transition: background 0.2s, color 0.2s;
+        }
+
+        .sidebar {
+            width: 260px;
+            flex: none;
+            background: var(--bg-sidebar);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            padding: 24px 16px;
+            gap: 6px;
+        }
+
+        .sidebar-brand {
+            font-size: 20px;
+            font-weight: 700;
+            margin-bottom: 20px;
+            padding-left: 12px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .nav-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 10px 14px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            color: var(--text-muted);
+            transition: background 0.15s, color 0.15s;
+        }
+        .nav-item:hover { background: var(--bg-card); color: var(--text-main); }
+        .nav-item.active { background: rgba(0, 136, 255, 0.15); color: var(--accent-color); font-weight: 600; }
+
+        .content {
+            flex: 1;
+            padding: 40px 60px;
+            overflow-y: auto;
+            max-width: 900px;
+        }
+
+        .section { display: none; }
+        .section.active { display: block; }
+
+        .section-title { font-size: 24px; font-weight: 500; margin-bottom: 8px; }
+        .section-subtitle { font-size: 14px; color: var(--text-muted); margin-bottom: 24px; }
+
+        .header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 24px;
+            gap: 16px;
+        }
+
+        .card {
+            background: var(--bg-card);
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 32px;
+        }
+
+        .setting-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--border-color);
+            gap: 16px;
+        }
+        .setting-row:last-child { border-bottom: none; }
+        .setting-label { font-size: 14px; font-weight: 500; }
+        .setting-desc { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+        .empty-row { color: var(--text-muted); font-size: 13px; }
+
+        .switch { position: relative; display: inline-block; width: 44px; height: 24px; flex: none; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            inset: 0;
+            background-color: #555;
+            transition: 0.2s;
+            border-radius: 24px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 18px; width: 18px;
+            left: 3px; bottom: 3px;
+            background-color: white;
+            transition: 0.2s;
+            border-radius: 50%;
+        }
+        input:checked + .slider { background-color: var(--toggle-on); }
+        input:checked + .slider:before { transform: translateX(20px); }
+        input:focus-visible + .slider { outline: 2px solid var(--accent-color); outline-offset: 2px; }
+
+        .btn-outlined {
+            background: transparent;
+            color: var(--text-main);
+            border: 1px solid var(--border-color);
+            padding: 8px 18px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 13px;
+            font-weight: 500;
+            transition: background 0.15s, border-color 0.15s;
+            flex: none;
+        }
+        .btn-outlined:hover { background: rgba(128, 128, 128, 0.12); border-color: var(--accent-color); }
+        .btn-primary { background: var(--accent-color); color: #fff; border: none; }
+
+        .list-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 14px 20px;
+            border-bottom: 1px solid var(--border-color);
+            cursor: pointer;
+            transition: background 0.15s;
+            gap: 16px;
+        }
+        .list-row:last-child { border-bottom: none; }
+        .list-row:hover { background: var(--card-hover); }
+        .site-info { display: flex; align-items: center; gap: 16px; min-width: 0; }
+        .site-icon { width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; opacity: 0.7; flex: none; }
+        .site-name { font-size: 14px; font-weight: 500; }
+        .site-user { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+        .close-icon { color: var(--text-muted); font-size: 14px; padding: 4px; }
+        .close-icon:hover { color: var(--danger); }
+
+        select, input[type="text"], input[type="password"], input[type="url"] {
+            background: var(--input-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            padding: 10px 14px;
+            border-radius: 8px;
+            outline: none;
+            font-size: 13px;
+            width: 100%;
+            user-select: text;
+        }
+        select:focus, input[type="text"]:focus, input[type="password"]:focus, input[type="url"]:focus { border-color: var(--accent-color); }
+
+        .shortcut-category {
+            font-size: 15px;
+            font-weight: 600;
+            color: var(--accent-color);
+            padding: 12px 20px 6px 20px;
+            background: rgba(0, 0, 0, 0.15);
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .shortcut-controls { display: flex; align-items: center; gap: 8px; flex: none; }
+        .shortcut-btn {
+            background: var(--kbd-bg);
+            border: 1px solid var(--border-color);
+            color: var(--text-main);
+            padding: 5px 10px;
+            border-radius: 6px;
+            font-family: monospace;
+            font-size: 12px;
+            cursor: pointer;
+            transition: border-color 0.15s, color 0.15s;
+            min-width: 130px;
+            text-align: center;
+        }
+        .shortcut-btn:hover { border-color: var(--accent-color); color: var(--accent-color); }
+        .shortcut-btn.unassigned { color: var(--text-muted); font-style: italic; }
+        .shortcut-btn.recording { border-color: var(--danger); color: var(--danger); animation: pulse 1s infinite alternate; }
+        @keyframes pulse { from { opacity: 0.6; } to { opacity: 1; } }
+        @media (prefers-reduced-motion: reduce) { .shortcut-btn.recording { animation: none; } }
+
+        .reset-one {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            font-size: 14px;
+            cursor: pointer;
+            width: 24px;
+            height: 24px;
+            border-radius: 4px;
+        }
+        .reset-one:hover { color: var(--accent-color); background: rgba(128,128,128,0.15); }
+        .reset-one[hidden] { display: inline-block !important; visibility: hidden; }
+
+        .shortcuts-toolbar { display: flex; gap: 12px; margin-bottom: 12px; }
+        .status-line { min-height: 20px; font-size: 13px; color: var(--text-muted); margin-bottom: 12px; }
+        .status-line.warn { color: var(--danger); }
+
+        .modal-overlay {
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.6);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal-card {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 24px;
+            width: 400px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            border: 1px solid var(--border-color);
+        }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 8px; }
+        .form-error { color: var(--danger); font-size: 13px; min-height: 16px; }
+
+        .toast {
+            position: fixed;
+            bottom: 18px;
+            left: 50%;
+            transform: translate(-50%, 12px);
+            background: var(--bg-card);
+            color: var(--text-main);
+            border: 1px solid var(--border-color);
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 13px;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.15s, transform 0.15s;
+            z-index: 2000;
+        }
+        .toast.show { opacity: 1; transform: translate(-50%, 0); }
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <div class="sidebar-brand">⚙️ Settings</div>
+        <div class="nav-item active" data-target="passwords">🔑 Passwords</div>
+        <div class="nav-item" data-target="appearance">🎨 Appearance</div>
+        <div class="nav-item" data-target="searchengine">🔍 Search &amp; home</div>
+        <div class="nav-item" data-target="shortcuts">⌨️ Keyboard Shortcuts</div>
+        <div class="nav-item" data-target="about">ℹ️ About</div>
+    </div>
+
+    <div class="content">
+
+        <!-- PASSWORDS -->
+        <div class="section active" id="passwords">
+            <div class="header-row">
+                <div>
+                    <div class="section-title">Passwords</div>
+                    <div class="section-subtitle" id="passwords-subtitle">Save and manage your passwords. Click a saved entry to copy its password for 30 seconds.</div>
+                </div>
+                <button class="btn-outlined" id="open-add-modal">Add</button>
+            </div>
+
+            <div class="card" id="saved-passwords-list"></div>
+
+            <div class="section-title" style="font-size: 18px; margin-top: 40px; margin-bottom: 20px;">Settings</div>
+
+            <div class="card">
+                <div class="setting-row">
+                    <div class="setting-label">Offer to save passwords and passkeys</div>
+                    <label class="switch"><input type="checkbox" id="toggle-offer" data-setting="offerSave"><span class="slider"></span></label>
+                </div>
+                <div class="setting-row">
+                    <div>
+                        <div class="setting-label">Automatically create a passkey to sign in faster</div>
+                        <div class="setting-desc">Allow sites and apps to upgrade existing accounts to use passkeys</div>
+                    </div>
+                    <label class="switch"><input type="checkbox" id="toggle-passkey" data-setting="offerPasskey"><span class="slider"></span></label>
+                </div>
+                <div class="setting-row">
+                    <div>
+                        <div class="setting-label">Sign in automatically</div>
+                        <div class="setting-desc">Remember how you signed in and sign you in automatically when possible.</div>
+                    </div>
+                    <label class="switch"><input type="checkbox" id="toggle-auto-signin" data-setting="autoSignin"><span class="slider"></span></label>
+                </div>
+                <div class="setting-row">
+                    <div>
+                        <div class="setting-label">Import passwords</div>
+                        <div class="setting-desc">Select a CSV file (site, username, password).</div>
+                    </div>
+                    <button class="btn-outlined" id="btn-import">Select file</button>
+                </div>
+                <div class="setting-row">
+                    <div>
+                        <div class="setting-label">Export passwords</div>
+                        <div class="setting-desc">The file is not encrypted. Delete it after you're done using it.</div>
+                    </div>
+                    <button class="btn-outlined" id="btn-export">Download file</button>
+                </div>
+                <div class="setting-row">
+                    <div>
+                        <div class="setting-label">Delete all Password Manager data</div>
+                        <div class="setting-desc">Passwords and declined sites will be permanently deleted</div>
+                    </div>
+                    <button class="btn-outlined" id="btn-delete-all">Delete data</button>
+                </div>
+            </div>
+
+            <div class="section-title" style="font-size: 18px; margin-bottom: 4px;">Declined sites and apps</div>
+            <div class="section-subtitle">You’ve chosen not to save passwords for these sites and apps</div>
+
+            <div class="card" id="declined-sites-list"></div>
+        </div>
+
+        <!-- APPEARANCE -->
+        <div class="section" id="appearance">
+            <div class="section-title">Appearance</div>
+            <div class="card" style="margin-top: 20px;">
+                <div class="setting-row">
+                    <div>
+                        <div class="setting-label">Browser theme</div>
+                        <div class="setting-desc">Applies instantly to the whole browser</div>
+                    </div>
+                    <select id="theme-select" style="width: auto;">
+                        <option value="dark">Dark theme</option>
+                        <option value="light">Light theme</option>
+                    </select>
+                </div>
+                <div class="setting-row">
+                    <div>
+                        <div class="setting-label">Show bookmarks bar</div>
+                    </div>
+                    <label class="switch"><input type="checkbox" id="toggle-bookmarks-bar" data-setting="showBookmarksBar"><span class="slider"></span></label>
+                </div>
+            </div>
+        </div>
+
+        <!-- SEARCH + HOME -->
+        <div class="section" id="searchengine">
+            <div class="section-title">Search &amp; home</div>
+            <div class="card" style="margin-top: 20px;">
+                <div class="setting-row">
+                    <div>
+                        <div class="setting-label">Search engine used in address bar</div>
+                        <div class="setting-desc">Used for anything you type that isn't a web address</div>
+                    </div>
+                    <select id="engine-select" style="width: auto;">
+                        <option value="https://www.google.com/search?q=">Google</option>
+                        <option value="https://www.bing.com/search?q=">Bing</option>
+                        <option value="https://duckduckgo.com/?q=">DuckDuckGo</option>
+                        <option value="https://search.brave.com/search?q=">Brave</option>
+                    </select>
+                </div>
+                <div class="setting-row">
+                    <div style="flex: 1;">
+                        <div class="setting-label">Home page</div>
+                        <div class="setting-desc">Opens in new tabs and with the home shortcut</div>
+                    </div>
+                    <input type="url" id="homepage-input" placeholder="https://www.google.com" style="width: 280px;" />
+                </div>
+            </div>
+            <div class="status-line" id="home-status"></div>
+        </div>
+
+        <!-- SHORTCUTS -->
+        <div class="section" id="shortcuts">
+            <div class="header-row" style="margin-bottom: 12px;">
+                <div>
+                    <div class="section-title">Keyboard Shortcuts</div>
+                    <div class="section-subtitle" style="margin-bottom:0;">Click a shortcut, then press the new keys. Changes apply immediately. Esc cancels, Backspace clears.</div>
+                </div>
+            </div>
+
+            <div class="shortcuts-toolbar">
+                <input type="text" id="shortcut-search" placeholder="Search shortcuts..." style="flex:1;" />
+                <button class="btn-outlined" id="reset-shortcuts-btn">Reset defaults</button>
+            </div>
+            <div class="status-line" id="shortcut-status" role="status"></div>
+
+            <div class="card" id="shortcuts-container"></div>
+        </div>
+
+        <!-- ABOUT -->
+        <div class="section" id="about">
+            <div class="section-title">About Neira Browser</div>
+            <div class="card" style="margin-top: 20px; padding: 20px;">
+                <div class="setting-label">Neira Browser v1.3.0</div>
+                <div class="setting-desc">Custom web browser built on Electron</div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- ADD PASSWORD MODAL -->
+    <div class="modal-overlay" id="add-modal">
+        <div class="modal-card">
+            <div class="setting-label" style="font-size: 16px;">Add saved password</div>
+            <input type="text" id="site-in" placeholder="Website domain (e.g. github.com)" autocomplete="off" />
+            <input type="text" id="user-in" placeholder="Username or email" autocomplete="off" />
+            <input type="password" id="pass-in" placeholder="Password" autocomplete="off" />
+            <div class="form-error" id="add-error"></div>
+            <div class="modal-actions">
+                <button class="btn-outlined" id="close-add-modal">Cancel</button>
+                <button class="btn-outlined btn-primary" id="save-pwd-btn">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script src="settings.js"></script>
+</body>
+</html>

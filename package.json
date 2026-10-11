@@ -1,6 +1,6 @@
 {
-  "name": "neira-browser",
-  "version": "1.0.0",
+  "name": "neira",
+  "version": "1.0.1",
   "description": "AI-native desktop browser",
   "main": "main.js",
   "scripts": {
@@ -50,6 +50,13 @@
         "nsis"
       ],
       "icon": "assets/icon.ico"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "assets/icon.icns"
     },
     "nsis": {
       "oneClick": false,

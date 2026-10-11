@@ -1,0 +1,579 @@
+'use strict';
+(() => {
+    const api = window.neira;
+    const $ = id => document.getElementById(id);
+    const MAX_DIAL = 24;
+    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+    const PRESETS = [
+        { value: 'none', label: 'None', cls: 'wp-none' },
+        { value: 'preset:neon', label: 'Neon', cls: 'wp-neon' },
+        { value: 'preset:aurora', label: 'Aurora', cls: 'wp-aurora' },
+        { value: 'preset:midnight', label: 'Midnight', cls: 'wp-midnight' },
+        { value: 'preset:stars', label: 'Stars', cls: 'wp-stars' }
+    ];
+
+    let settings = { wallpaper: 'preset:neon', wallpaperDim: 35, wallpaperBlur: 0, showClock: true, engine: '' };
+    let dial = [];
+    let historyItems = [];
+    let bookmarkItems = [];
+
+    // -----------------------------------------------------------------------
+    // Helpers
+    // -----------------------------------------------------------------------
+    function el(tag, className, text) {
+        const node = document.createElement(tag);
+        if (className) node.className = className;
+        if (text !== undefined) node.textContent = text;
+        return node;
+    }
+
+    let toastTimer;
+    function toast(message) {
+        const t = $('toast');
+        t.textContent = message;
+        t.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
+    }
+
+    // The browser window opens it in this tab (the new tab page becomes the site).
+    const go = text => api.newtab.go(text);
+
+    function hostOf(url) {
+        try { return new URL(url).hostname.replace(/^www\./, ''); } catch (_) { return url; }
+    }
+
+    function hueOf(text) {
+        let h = 0;
+        for (const c of text) h = (h * 31 + c.charCodeAt(0)) >>> 0;
+        return h % 360;
+    }
+
+    // -----------------------------------------------------------------------
+    // Wallpaper (presets, uploaded image, uploaded live video)
+    // -----------------------------------------------------------------------
+    let stars = null;
+    let videoEl = null;
+
+    function stopStars() {
+        if (!stars) return;
+        cancelAnimationFrame(stars.raf);
+        window.removeEventListener('resize', stars.onResize);
+        stars = null;
+    }
+
+    function startStars(canvas) {
+        const ctx = canvas.getContext('2d');
+        const state = { raf: 0, list: [], onResize: null };
+        const resize = () => {
+            const dpr = window.devicePixelRatio || 1;
+            canvas.width = Math.floor(canvas.clientWidth * dpr);
+            canvas.height = Math.floor(canvas.clientHeight * dpr);
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+            const count = Math.round((canvas.clientWidth * canvas.clientHeight) / 7000);
+            state.list = Array.from({ length: count }, () => ({
+                x: Math.random() * canvas.clientWidth,
+                y: Math.random() * canvas.clientHeight,
+                r: Math.random() * 1.4 + 0.3,
+                speed: Math.random() * 0.12 + 0.02,
+                phase: Math.random() * Math.PI * 2
+            }));
+        };
+        const draw = time => {
+            ctx.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
+            for (const s of state.list) {
+                if (!reduceMotion.matches) {
+                    s.y -= s.speed;
+                    if (s.y < -2) { s.y = canvas.clientHeight + 2; s.x = Math.random() * canvas.clientWidth; }
+                }
+                const twinkle = reduceMotion.matches ? 0.8 : 0.55 + 0.45 * Math.sin(time / 700 + s.phase);
+                ctx.globalAlpha = twinkle;
+                ctx.fillStyle = '#fff';
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+                ctx.fill();
+            }
+            if (!reduceMotion.matches) state.raf = requestAnimationFrame(draw);
+        };
+        state.onResize = () => { resize(); if (reduceMotion.matches) draw(0); };
+        window.addEventListener('resize', state.onResize);
+        resize();
+        draw(0);
+        stars = state;
+    }
+
+    function applyWallpaper() {
+        const layer = $('wallpaper');
+        stopStars();
+        videoEl = null;
+        layer.className = 'wallpaper';
+        layer.replaceChildren();
+        layer.style.setProperty('--blur', (settings.wallpaperBlur || 0) + 'px');
+        $('wp-dim').style.opacity = String((settings.wallpaperDim || 0) / 100);
+
+        const value = settings.wallpaper || 'preset:neon';
+        if (value === 'none') { layer.classList.add('wp-none'); return; }
+        if (value.startsWith('preset:')) {
+            const name = value.slice(7);
+            layer.classList.add('wp-' + name);
+            if (name === 'stars') {
+                const canvas = document.createElement('canvas');
+                layer.appendChild(canvas);
+                startStars(canvas);
+            }
+            return;
+        }
+        if (value.startsWith('file:')) {
+            const name = value.slice(5);
+            const url = 'neira-asset://wallpaper/' + encodeURIComponent(name);
+            if (/\.(mp4|webm)$/i.test(name)) {
+                const v = document.createElement('video');
+                v.muted = true;
+                v.loop = true;
+                v.playsInline = true;
+                v.setAttribute('muted', '');
+                v.addEventListener('error', () => {
+                    toast('That video could not be played, so the default wallpaper is showing.');
+                    layer.replaceChildren();
+                    layer.className = 'wallpaper wp-neon';
+                    videoEl = null;
+                });
+                v.src = url;
+                layer.appendChild(v);
+                if (!reduceMotion.matches) v.play().catch(() => {});
+                videoEl = v;
+            } else {
+                const img = document.createElement('img');
+                img.alt = '';
+                img.addEventListener('error', () => { layer.replaceChildren(); layer.className = 'wallpaper wp-neon'; });
+                img.src = url;
+                layer.appendChild(img);
+            }
+        }
+    }
+
+    // Live wallpapers should not burn CPU while nobody is looking
+    document.addEventListener('visibilitychange', () => {
+        if (!videoEl) return;
+        if (document.hidden) videoEl.pause();
+        else if (!reduceMotion.matches) videoEl.play().catch(() => {});
+    });
+
+    // -----------------------------------------------------------------------
+    // Clock
+    // -----------------------------------------------------------------------
+    function tick() {
+        const now = new Date();
+        $('time').textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        $('date').textContent = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+    }
+    setInterval(tick, 10000);
+
+    // -----------------------------------------------------------------------
+    // Search bar with local suggestions (Speed Dial, bookmarks, history; nothing leaves the device)
+    // -----------------------------------------------------------------------
+    const qInput = $('q');
+    const suggestEl = $('suggest');
+    let rows = [];
+    let selected = -1;
+
+    function computeSuggestions(text) {
+        const needle = text.trim().toLowerCase();
+        if (!needle) return [];
+        const seen = new Set();
+        const out = [];
+        const add = (title, url, kind) => {
+            if (out.length >= 7 || seen.has(url)) return;
+            seen.add(url);
+            out.push({ main: title || url, sub: url, kind, value: url });
+        };
+        const match = (a, b) => (a + ' ' + b).toLowerCase().includes(needle);
+        for (const d of dial) if (match(d.title, d.url)) add(d.title, d.url, 'Speed Dial');
+        for (const b of bookmarkItems) if (match(b.title || '', b.url)) add(b.title, b.url, 'Bookmark');
+        for (const h of historyItems) {
+            if (out.length >= 7) break;
+            if (match(h.title || '', h.url)) add(h.title, h.url, 'History');
+        }
+        return out;
+    }
+
+    function closeSuggest() {
+        suggestEl.hidden = true;
+        suggestEl.replaceChildren();
+        qInput.setAttribute('aria-expanded', 'false');
+        rows = [];
+        selected = -1;
+    }
+
+    function renderSuggest() {
+        suggestEl.replaceChildren();
+        rows.forEach((r, i) => {
+            const b = el('button', 'sg-item' + (i === selected ? ' sel' : ''));
+            b.type = 'button';
+            b.setAttribute('role', 'option');
+            b.appendChild(el('span', 'sg-main', r.main));
+            if (r.sub) b.appendChild(el('span', 'sg-sub', r.sub));
+            if (r.kind) b.appendChild(el('span', 'sg-kind', r.kind));
+            // mousedown (not click) so the input does not lose focus first
+            b.addEventListener('mousedown', e => { e.preventDefault(); go(r.value); });
+            suggestEl.appendChild(b);
+        });
+        suggestEl.hidden = !rows.length;
+        qInput.setAttribute('aria-expanded', rows.length ? 'true' : 'false');
+    }
+
+    qInput.addEventListener('input', () => {
+        const text = qInput.value;
+        const found = computeSuggestions(text);
+        rows = text.trim() ? [{ main: `Search for “${text.trim()}”`, sub: '', kind: '', value: text.trim() }, ...found] : [];
+        selected = -1;
+        renderSuggest();
+    });
+
+    qInput.addEventListener('keydown', e => {
+        if (e.key === 'ArrowDown' && rows.length) { e.preventDefault(); selected = (selected + 1) % rows.length; renderSuggest(); }
+        else if (e.key === 'ArrowUp' && rows.length) { e.preventDefault(); selected = (selected - 1 + rows.length) % rows.length; renderSuggest(); }
+        else if (e.key === 'Escape') { if (rows.length) { e.preventDefault(); closeSuggest(); } }
+    });
+
+    $('search-form').addEventListener('submit', e => {
+        e.preventDefault();
+        const text = selected >= 0 && rows[selected] ? rows[selected].value : qInput.value.trim();
+        if (text) go(text);
+    });
+
+    qInput.addEventListener('blur', () => setTimeout(closeSuggest, 120));
+
+    $('engine').addEventListener('change', e => api.settings.set('engine', e.target.value));
+
+    // -----------------------------------------------------------------------
+    // Speed Dial
+    // -----------------------------------------------------------------------
+    let dragFrom = null;
+
+    let keepFocus = null; // tile index that should hold focus after the next render
+
+    async function saveDial(next) {
+        dial = next;
+        renderDial();
+        try { dial = await api.speedDial.set(next); } catch (_) { toast('Could not save your Speed Dial.'); }
+    }
+
+    function renderDial() {
+        const grid = $('dial');
+        const active = document.activeElement && document.activeElement.closest ? document.activeElement.closest('.tile') : null;
+        const refocus = keepFocus !== null ? keepFocus : (active && grid.contains(active) ? [...grid.children].indexOf(active) : null);
+        keepFocus = null;
+        grid.replaceChildren();
+
+        dial.forEach((d, i) => {
+            const host = hostOf(d.url);
+            const hue = hueOf(host);
+            const tile = el('div', 'tile');
+            tile.tabIndex = 0;
+            tile.draggable = true;
+            tile.setAttribute('role', 'listitem');
+            tile.title = `${d.url}\nDrag to reorder, or press Shift + ← / →`;
+
+            const art = el('div', 'tile-art');
+            art.style.setProperty('--h1', String(hue));
+            art.style.setProperty('--h2', String((hue + 40) % 360));
+            if (d.image) { // the user's own picture instead of the coloured tile
+                art.classList.add('has-image');
+                const img = document.createElement('img');
+                img.alt = '';
+                img.draggable = false; // so dragging the tile reorders it instead of dragging the picture
+                img.addEventListener('error', () => {
+                    img.remove();
+                    art.classList.remove('has-image');
+                    art.appendChild(el('span', 'tile-host', host));
+                });
+                img.src = 'neira-asset://dial/' + encodeURIComponent(d.image);
+                art.appendChild(img);
+            } else {
+                art.appendChild(el('span', 'tile-host', host));
+            }
+
+            const tools = el('div', 'tile-tools');
+            const edit = el('button', '', '✎');
+            edit.type = 'button';
+            edit.setAttribute('aria-label', 'Edit ' + d.title);
+            edit.addEventListener('click', e => { e.stopPropagation(); openModal(i); });
+            const remove = el('button', '', '✕');
+            remove.type = 'button';
+            remove.setAttribute('aria-label', 'Remove ' + d.title);
+            remove.addEventListener('click', e => {
+                e.stopPropagation();
+                saveDial(dial.filter((_, idx) => idx !== i));
+                toast(`Removed ${d.title}`);
+            });
+            tools.append(edit, remove);
+            for (const b of [edit, remove]) b.addEventListener('keydown', e => e.stopPropagation());
+
+            tile.append(art, el('div', 'tile-title', d.title), tools);
+
+            tile.addEventListener('click', () => go(d.url));
+            tile.addEventListener('keydown', e => {
+                if (e.key === 'Enter') { e.preventDefault(); go(d.url); }
+                else if (e.shiftKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) {
+                    e.preventDefault();
+                    const j = i + (e.key === 'ArrowRight' ? 1 : -1);
+                    if (j < 0 || j >= dial.length) return;
+                    const next = [...dial];
+                    [next[i], next[j]] = [next[j], next[i]];
+                    keepFocus = j;
+                    saveDial(next);
+                }
+            });
+
+            tile.addEventListener('dragstart', e => {
+                dragFrom = i;
+                e.dataTransfer.effectAllowed = 'move';
+                e.dataTransfer.setData('text/plain', String(i));
+                tile.classList.add('dragging');
+            });
+            tile.addEventListener('dragend', () => {
+                dragFrom = null;
+                tile.classList.remove('dragging');
+                grid.querySelectorAll('.over').forEach(n => n.classList.remove('over'));
+            });
+            tile.addEventListener('dragover', e => { if (dragFrom === null) return; e.preventDefault(); tile.classList.add('over'); });
+            tile.addEventListener('dragleave', () => tile.classList.remove('over'));
+            tile.addEventListener('drop', e => {
+                e.preventDefault();
+                tile.classList.remove('over');
+                if (dragFrom === null || dragFrom === i) return;
+                const next = [...dial];
+                const [moved] = next.splice(dragFrom, 1);
+                next.splice(i, 0, moved);
+                dragFrom = null;
+                saveDial(next);
+            });
+
+            grid.appendChild(tile);
+        });
+
+        if (dial.length < MAX_DIAL) {
+            const add = el('div', 'tile tile-add');
+            add.tabIndex = 0;
+            add.setAttribute('role', 'listitem');
+            add.title = 'Add a site';
+            const art = el('div', 'tile-art');
+            art.appendChild(el('span', 'tile-host', '+'));
+            add.append(art, el('div', 'tile-title', 'Add site'));
+            add.addEventListener('click', () => openModal(-1));
+            add.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openModal(-1); } });
+            grid.appendChild(add);
+        }
+        if (refocus !== null && grid.children[refocus]) grid.children[refocus].focus();
+    }
+
+    // Add / edit dialog
+    let editIndex = -1;
+    let pendingImage = ''; // file name of the picture chosen in the open dialog ('' = default look)
+    const modal = $('dial-modal');
+
+    function renderDialImage() {
+        const box = $('dial-image-preview');
+        box.replaceChildren();
+        if (pendingImage) {
+            const img = document.createElement('img');
+            img.alt = '';
+            img.src = 'neira-asset://dial/' + encodeURIComponent(pendingImage);
+            box.appendChild(img);
+        } else {
+            box.textContent = 'Default look';
+        }
+        $('dial-image-choose').textContent = pendingImage ? 'Change image…' : 'Choose image…';
+        $('dial-image-clear').hidden = !pendingImage;
+    }
+
+    function openModal(index) {
+        editIndex = index;
+        $('dial-modal-title').textContent = index >= 0 ? 'Edit site' : 'Add to Speed Dial';
+        $('dial-title').value = index >= 0 ? dial[index].title : '';
+        $('dial-url').value = index >= 0 ? dial[index].url : '';
+        $('dial-error').textContent = '';
+        pendingImage = index >= 0 ? (dial[index].image || '') : '';
+        renderDialImage();
+        modal.hidden = false;
+        $(index >= 0 ? 'dial-title' : 'dial-url').focus();
+    }
+
+    function closeModal() {
+        modal.hidden = true;
+        qInput.focus();
+    }
+
+    function submitModal() {
+        let address = $('dial-url').value.trim();
+        if (!address) { $('dial-error').textContent = 'Enter a web address.'; return; }
+        if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(address)) address = 'https://' + address;
+        let url;
+        try { url = new URL(address); } catch (_) { url = null; }
+        if (!url || !/^https?:$/.test(url.protocol) || !url.hostname.includes('.') && url.hostname !== 'localhost') {
+            $('dial-error').textContent = 'That doesn’t look like a valid web address.';
+            return;
+        }
+        const title = $('dial-title').value.trim() || hostOf(url.href);
+        const next = [...dial];
+        if (editIndex >= 0) next[editIndex] = { ...next[editIndex], title, url: url.href, image: pendingImage };
+        else next.push({ title, url: url.href, image: pendingImage });
+        closeModal();
+        saveDial(next);
+    }
+
+    $('dial-save').addEventListener('click', submitModal);
+    $('dial-cancel').addEventListener('click', closeModal);
+    $('dial-image-choose').addEventListener('click', async () => {
+        $('dial-error').textContent = '';
+        const r = await api.speedDial.chooseImage();
+        if (r && r.ok) { pendingImage = r.image; renderDialImage(); }
+        else if (r && r.reason) $('dial-error').textContent = r.reason;
+    });
+    $('dial-image-clear').addEventListener('click', () => { pendingImage = ''; renderDialImage(); });
+    modal.addEventListener('mousedown', e => { if (e.target === modal) closeModal(); });
+    modal.addEventListener('keydown', e => {
+        if (e.key === 'Escape') { e.stopPropagation(); closeModal(); }
+        else if (e.key === 'Enter') {
+            if (e.target.tagName === 'BUTTON') return; // let Enter press the focused button
+            e.preventDefault();
+            submitModal();
+        }
+    });
+
+    // -----------------------------------------------------------------------
+    // Customize drawer
+    // -----------------------------------------------------------------------
+    const drawer = $('drawer');
+
+    function renderWallpaperGrid() {
+        const grid = $('wp-grid');
+        grid.replaceChildren();
+        const current = settings.wallpaper || 'preset:neon';
+
+        for (const p of PRESETS) {
+            const card = el('button', 'wp-card' + (current === p.value ? ' active' : ''));
+            card.type = 'button';
+            const thumb = el('div', 'thumb ' + p.cls);
+            if (p.value === 'none') thumb.textContent = '∅';
+            card.append(thumb, el('span', 'label', p.label));
+            card.addEventListener('click', () => api.settings.set('wallpaper', p.value));
+            grid.appendChild(card);
+        }
+
+        if (current.startsWith('file:')) {
+            const name = current.slice(5);
+            const card = el('button', 'wp-card active');
+            card.type = 'button';
+            const thumb = el('div', 'thumb');
+            const url = 'neira-asset://wallpaper/' + encodeURIComponent(name);
+            if (/\.(mp4|webm)$/i.test(name)) {
+                const v = document.createElement('video');
+                v.muted = true;
+                v.preload = 'metadata';
+                v.src = url;
+                thumb.appendChild(v);
+            } else {
+                const img = document.createElement('img');
+                img.alt = '';
+                img.src = url;
+                thumb.appendChild(img);
+            }
+            card.append(thumb, el('span', 'label', 'Yours'));
+            grid.appendChild(card);
+        }
+
+        const upload = el('button', 'wp-card');
+        upload.type = 'button';
+        const thumb = el('div', 'thumb', '+');
+        upload.append(thumb, el('span', 'label', 'Image / video'));
+        upload.addEventListener('click', async () => {
+            const r = await api.wallpaper.choose();
+            if (r && r.ok) toast(r.video ? 'Live wallpaper set' : 'Wallpaper set');
+            else if (r && r.reason) toast(r.reason);
+        });
+        grid.appendChild(upload);
+    }
+
+    function renderAccentSwatches() {
+        window.neiraTheme.swatches($('accent-swatches'), settings.accent, hex => api.settings.set('accent', hex));
+    }
+
+    function syncDrawerControls() {
+        $('dim').value = String(settings.wallpaperDim || 0);
+        $('dim-out').textContent = (settings.wallpaperDim || 0) + '%';
+        $('blur').value = String(settings.wallpaperBlur || 0);
+        $('blur-out').textContent = (settings.wallpaperBlur || 0) + 'px';
+        $('show-clock').checked = settings.showClock !== false;
+    }
+
+    function openDrawer() {
+        drawer.hidden = false;
+        renderWallpaperGrid();
+        renderAccentSwatches();
+        syncDrawerControls();
+        $('drawer-close').focus();
+    }
+    function closeDrawer() {
+        drawer.hidden = true;
+        $('customize-btn').focus();
+    }
+
+    $('customize-btn').addEventListener('click', () => (drawer.hidden ? openDrawer() : closeDrawer()));
+    $('drawer-close').addEventListener('click', closeDrawer);
+    drawer.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+    $('all-settings').addEventListener('click', () => go('neira://settings'));
+
+    // Sliders preview instantly, and save when released
+    $('dim').addEventListener('input', e => {
+        $('wp-dim').style.opacity = String(Number(e.target.value) / 100);
+        $('dim-out').textContent = e.target.value + '%';
+    });
+    $('dim').addEventListener('change', e => api.settings.set('wallpaperDim', Number(e.target.value)));
+    $('blur').addEventListener('input', e => {
+        $('wallpaper').style.setProperty('--blur', e.target.value + 'px');
+        $('blur-out').textContent = e.target.value + 'px';
+    });
+    $('blur').addEventListener('change', e => api.settings.set('wallpaperBlur', Number(e.target.value)));
+    $('show-clock').addEventListener('change', e => api.settings.set('showClock', e.target.checked));
+
+    // -----------------------------------------------------------------------
+    // Boot
+    // -----------------------------------------------------------------------
+    function applySettings(next) {
+        const wallpaperChanged = next.wallpaper !== settings.wallpaper
+            || next.wallpaperDim !== settings.wallpaperDim || next.wallpaperBlur !== settings.wallpaperBlur;
+        settings = next;
+        window.neiraTheme.apply(next);
+        window.neiraTheme.persist(next);
+        if (wallpaperChanged) applyWallpaper();
+        $('clock').hidden = settings.showClock === false;
+        $('engine').value = settings.engine;
+        if (!drawer.hidden) { renderWallpaperGrid(); renderAccentSwatches(); syncDrawerControls(); }
+    }
+
+    async function init() {
+        tick();
+        qInput.focus();
+        renderDial();
+        const [s, d, h, b] = await Promise.allSettled([
+            api.settings.get(), api.speedDial.get(), api.history.get(), api.bookmarks.get()
+        ]);
+        if (d.status === 'fulfilled') dial = d.value;
+        if (h.status === 'fulfilled') historyItems = h.value;
+        if (b.status === 'fulfilled') bookmarkItems = b.value;
+        settings = { ...settings, wallpaper: undefined }; // force the first apply
+        if (s.status === 'fulfilled') applySettings(s.value);
+        else applyWallpaper();
+        renderDial();
+
+        api.settings.onChange(applySettings);
+        api.speedDial.onChange(list => { dial = list; renderDial(); });
+        api.history.onChange(list => { historyItems = list; });
+        api.bookmarks.onChange(list => { bookmarkItems = list; });
+        if (location.hash === '#customize') openDrawer(); // opened from Settings > New tab wallpaper > Customize
+    }
+    init();
+})();

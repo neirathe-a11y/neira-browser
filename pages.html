@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'">
+    <title>Neira Settings</title>
+    <script src="boot.js"></script>
+    <style>
+        :root {
+            /* base surface colours; the accent can tint them (--tint is set by boot.js: 0% / 7% / 15%) */
+            --base-main: #0a0b0e;
+            --base-sidebar: #0f1016;
+            --base-card: #151722;
+            --base-input: #1a1d2d;
+            --base-key: #222639;
+            --tint: 0%;
+            --bg-main: color-mix(in srgb, var(--accent) var(--tint), var(--base-main));
+            --sidebar-bg: color-mix(in srgb, var(--accent) var(--tint), var(--base-sidebar));
+            --card-bg: color-mix(in srgb, var(--accent) var(--tint), var(--base-card));
+            --input-bg: color-mix(in srgb, var(--accent) var(--tint), var(--base-input));
+            --key-bg: color-mix(in srgb, var(--accent) var(--tint), var(--base-key));
+            --border-color: rgba(255, 255, 255, 0.08);
+            --text-primary: #f3f4f6;
+            --text-secondary: #9ca3af;
+            --accent: #6366f1;
+            --on-accent: #ffffff;
+            --accent-hover: color-mix(in srgb, var(--accent), #000 18%);
+            --accent-soft: color-mix(in srgb, var(--accent) 16%, transparent);
+            --danger: #ef4444;
+            --warn: #f59e0b;
+            --card-border: rgba(255, 255, 255, 0.05);
+            --hover: rgba(255, 255, 255, 0.05);
+            --padding-card: 20px;
+            --gap-list: 16px;
+            --row-pad: 12px 16px;
+        }
+        :root.light-theme {
+            --base-main: #f3f4f6;
+            --base-sidebar: #ffffff;
+            --base-card: #ffffff;
+            --base-input: #f0f1f5;
+            --base-key: #eceef6;
+            --border-color: rgba(0, 0, 0, 0.1);
+            --text-primary: #111827;
+            --text-secondary: #4b5563;
+            --card-border: rgba(0, 0, 0, 0.08);
+            --hover: rgba(0, 0, 0, 0.05);
+        }
+        :root.compact {
+            --padding-card: 10px 14px;
+            --gap-list: 8px;
+            --row-pad: 7px 14px;
+        }
+
+        [hidden] { display: none !important; }
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+        body {
+            background-color: var(--bg-main);
+            color: var(--text-primary);
+            display: flex;
+            height: 100vh;
+            overflow: hidden;
+            transition: background-color 0.2s ease, color 0.2s ease;
+        }
+
+        /* Sidebar */
+        .sidebar {
+            width: 240px;
+            background-color: var(--sidebar-bg);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            padding: 24px 16px;
+            gap: 4px;
+            flex-shrink: 0;
+            overflow-y: auto;
+        }
+        .brand-title { font-size: 20px; font-weight: 700; padding: 0 12px 14px 12px; letter-spacing: -0.5px; }
+        .nav-group { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-secondary); padding: 14px 14px 6px; opacity: 0.8; }
+        .nav-item {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 9px 14px; border-radius: 8px; color: var(--text-secondary);
+            text-decoration: none; font-size: 14px; font-weight: 500; cursor: pointer;
+            transition: background-color 0.15s ease, color 0.15s ease;
+        }
+        .nav-item:hover { color: var(--text-primary); background-color: var(--hover); }
+        .nav-item.active { background-color: var(--accent); color: var(--on-accent); }
+        .nav-badge { font-size: 11px; padding: 1px 7px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); }
+        .nav-item.active .nav-badge { background: rgba(255,255,255,0.22); color: var(--on-accent); }
+
+        /* Content */
+        .content { flex: 1; padding: 40px 60px 80px; overflow-y: auto; scroll-behavior: smooth; }
+        @media (prefers-reduced-motion: reduce) { .content { scroll-behavior: auto; } }
+        .page-section { display: none; max-width: 820px; }
+        .page-section.active { display: block; }
+        .section-header { font-size: 28px; font-weight: 700; margin-bottom: 6px; }
+        .section-sub { font-size: 14px; color: var(--text-secondary); margin-bottom: 24px; line-height: 1.5; }
+        .sub-header { font-size: 16px; font-weight: 600; margin: 28px 0 12px; }
+
+        /* Cards + settings rows */
+        .setting-card {
+            background-color: var(--card-bg); border: 1px solid var(--card-border); border-radius: 12px;
+            padding: var(--padding-card); margin-bottom: var(--gap-list);
+            display: flex; align-items: center; justify-content: space-between; gap: 20px;
+            transition: padding 0.15s ease, margin 0.15s ease;
+        }
+        .setting-card.stack { flex-direction: column; align-items: flex-start; }
+        .swatches { display: flex; flex-wrap: wrap; gap: 10px; }
+        .swatch { position: relative; width: 30px; height: 30px; border-radius: 50%; padding: 0; cursor: pointer; background: var(--sw, #888); border: 2px solid var(--border-color); }
+        .swatch:hover { transform: scale(1.08); }
+        .swatch.active { box-shadow: 0 0 0 2px var(--card-bg), 0 0 0 4px var(--sw, #888); }
+        .swatch.custom { background: conic-gradient(#ef4444, #eab308, #22c55e, #06b6d4, #6366f1, #ec4899, #ef4444); overflow: hidden; }
+        .swatch.custom input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+        .setting-info h3 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
+        .setting-info p { font-size: 13px; color: var(--text-secondary); line-height: 1.45; }
+        .setting-info.grow { flex: 1; }
+        .status-line { min-height: 20px; font-size: 13px; color: var(--text-secondary); margin: -4px 0 12px; }
+        .status-line.warn { color: var(--danger); }
+
+        .switch { position: relative; display: inline-block; width: 44px; height: 24px; flex: none; }
+        .switch input { opacity: 0; width: 0; height: 0; }
+        .slider { position: absolute; cursor: pointer; inset: 0; background-color: #4b5563; transition: 0.2s; border-radius: 24px; }
+        .slider:before { position: absolute; content: ""; height: 18px; width: 18px; left: 3px; bottom: 3px; background: #fff; transition: 0.2s; border-radius: 50%; }
+        input:checked + .slider { background-color: var(--accent); }
+        input:checked + .slider:before { transform: translateX(20px); }
+        input:focus-visible + .slider { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+        select, input[type="text"], input[type="password"], input[type="url"], input[type="search"] {
+            background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-primary);
+            padding: 9px 12px; border-radius: 8px; outline: none; font-size: 13px; min-width: 0;
+        }
+        select:focus, input:focus { border-color: var(--accent); }
+
+        .btn {
+            background: transparent; color: var(--text-primary); border: 1px solid var(--border-color);
+            padding: 8px 16px; border-radius: 8px; cursor: pointer; font-size: 13px; font-weight: 500;
+            transition: background 0.15s, border-color 0.15s; flex: none; white-space: nowrap;
+        }
+        .btn:hover { background: var(--hover); border-color: var(--accent); }
+        .btn-primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+        .btn-primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+        .btn-danger { color: var(--danger); border-color: rgba(239, 68, 68, 0.4); }
+        .btn-danger:hover { background: rgba(239, 68, 68, 0.12); border-color: var(--danger); }
+        .btn-small { padding: 5px 12px; font-size: 12px; }
+
+        /* Lists (history, bookmarks, downloads, passwords) */
+        .tools { display: flex; gap: 10px; margin-bottom: 16px; }
+        .tools input { flex: 1; }
+        .list { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 12px; overflow: hidden; }
+        .day { font-size: 12px; font-weight: 600; color: var(--accent); padding: 10px 16px 6px; background: var(--accent-soft); }
+        .row { display: flex; align-items: center; gap: 14px; padding: var(--row-pad); border-bottom: 1px solid var(--card-border); cursor: pointer; }
+        .row:last-child { border-bottom: none; }
+        .row:hover { background: var(--hover); }
+        .row.static { cursor: default; }
+        .meta { flex: 1; min-width: 0; }
+        .title { font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .sub { font-size: 12px; color: var(--text-secondary); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; margin-top: 2px; }
+        .time { font-size: 12px; color: var(--text-secondary); flex: none; }
+        .remove { color: var(--text-secondary); padding: 4px 8px; border-radius: 6px; flex: none; cursor: pointer; background: none; border: none; font-size: 13px; }
+        .remove:hover { color: var(--danger); background: rgba(239, 68, 68, 0.1); }
+        .empty { padding: 32px 20px; color: var(--text-secondary); font-size: 14px; text-align: center; }
+        .more { display: block; margin: 12px auto 0; }
+        .bar { height: 4px; background: var(--border-color); border-radius: 2px; margin-top: 8px; overflow: hidden; }
+        .bar > div { height: 100%; background: var(--accent); transition: width 0.25s; }
+        .actions { display: flex; gap: 8px; flex: none; }
+
+        .skeleton { padding: 18px 16px; display: flex; flex-direction: column; gap: 14px; }
+        .skeleton i { display: block; height: 12px; border-radius: 6px; background: linear-gradient(90deg, var(--hover), var(--border-color), var(--hover)); background-size: 200% 100%; animation: shimmer 1.2s linear infinite; }
+        .skeleton i:nth-child(2) { width: 70%; }
+        .skeleton i:nth-child(3) { width: 85%; }
+        @keyframes shimmer { to { background-position: -200% 0; } }
+        @media (prefers-reduced-motion: reduce) { .skeleton i { animation: none; } }
+
+        /* Keyboard shortcuts */
+        .sc-sticky {
+            position: sticky; top: 0; z-index: 5; margin: 0 -12px 8px; padding: 12px 12px 8px;
+            background: var(--bg-main);
+        }
+        .sc-toolbar { display: flex; gap: 8px; align-items: center; }
+        .sc-toolbar input { flex: 1; }
+        .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+        .chip {
+            background: transparent; color: var(--text-secondary); border: 1px solid var(--border-color);
+            padding: 4px 11px; border-radius: 14px; font-size: 12px; cursor: pointer;
+        }
+        .chip:hover { color: var(--text-primary); border-color: var(--accent); }
+        .chip.active { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+        .chip b { font-weight: 600; opacity: 0.75; margin-left: 4px; }
+
+        .record-banner {
+            margin-top: 10px; padding: 10px 14px; border-radius: 10px;
+            background: var(--accent-soft); border: 1px solid var(--accent);
+            display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px;
+        }
+        .record-banner.warn { background: rgba(245, 158, 11, 0.14); border-color: var(--warn); }
+        .record-preview { font-family: ui-monospace, Menlo, Consolas, monospace; font-weight: 600; min-width: 60px; text-align: right; }
+        .record-hint { color: var(--text-secondary); font-size: 12px; }
+
+        .sc-cat { font-size: 13px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); margin: 22px 0 8px; display: flex; gap: 8px; align-items: baseline; }
+        .sc-cat span { font-weight: 400; opacity: 0.7; text-transform: none; letter-spacing: 0; }
+        .sc-list { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 12px; overflow: hidden; }
+        .sc-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: var(--row-pad); border-bottom: 1px solid var(--card-border); cursor: pointer; }
+        .sc-row:last-child { border-bottom: none; }
+        .sc-row:hover { background: var(--hover); }
+        .sc-row.recording { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
+        .sc-name { font-size: 14px; display: flex; align-items: center; gap: 8px; min-width: 0; }
+        .sc-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--accent); flex: none; }
+        .sc-actions { display: flex; align-items: center; gap: 4px; flex: none; }
+        .icon-btn { background: none; border: none; color: var(--text-secondary); width: 26px; height: 26px; border-radius: 6px; cursor: pointer; font-size: 14px; }
+        .icon-btn:hover { color: var(--text-primary); background: var(--hover); }
+        .icon-btn.hidden { visibility: hidden; }
+        .keys {
+            display: inline-flex; align-items: center; gap: 4px; min-width: 150px; justify-content: flex-end;
+            background: none; border: 1px dashed transparent; border-radius: 8px; padding: 4px 6px; cursor: pointer; color: var(--text-primary);
+        }
+        .sc-row:hover .keys { border-color: var(--border-color); }
+        .sc-row.recording .keys { border-color: var(--accent); }
+        kbd {
+            font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; font-weight: 600;
+            background: var(--key-bg); border: 1px solid var(--border-color); border-bottom-width: 2px;
+            border-radius: 6px; padding: 2px 7px; min-width: 24px; text-align: center;
+        }
+        .keys-plus { color: var(--text-secondary); font-size: 11px; }
+        .keys-empty { color: var(--text-secondary); font-size: 12px; font-style: italic; padding: 3px 6px; }
+        .keys-live { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; color: var(--accent); font-weight: 600; }
+
+        .snack {
+            position: fixed; bottom: 24px; left: calc(50% + 120px); transform: translateX(-50%);
+            background: var(--card-bg); color: var(--text-primary); border: 1px solid var(--accent);
+            border-radius: 12px; padding: 10px 14px; font-size: 13px; display: flex; gap: 14px; align-items: center;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.4); z-index: 40; max-width: min(560px, 80vw);
+        }
+        .snack button { background: none; border: none; color: var(--accent); font-weight: 700; cursor: pointer; font-size: 13px; }
+
+        .toast {
+            position: fixed; bottom: 24px; left: calc(50% + 120px); transform: translate(-50%, 12px);
+            background: var(--card-bg); border: 1px solid var(--border-color); padding: 8px 16px; border-radius: 20px;
+            font-size: 13px; opacity: 0; pointer-events: none; transition: opacity 0.15s, transform 0.15s; z-index: 50;
+        }
+        .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: none; align-items: center; justify-content: center; z-index: 100; }
+        .modal-overlay.active { display: flex; }
+        .modal-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: 14px; padding: 24px; width: 400px; display: flex; flex-direction: column; gap: 14px; }
+        .modal-card h3 { font-size: 16px; }
+        .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
+        .form-error { color: var(--danger); font-size: 13px; min-height: 16px; }
+    </style>
+</head>
+<body>
+
+    <nav class="sidebar" aria-label="Settings sections">
+        <div class="brand-title">Neira</div>
+
+        <div class="nav-group">Browse</div>
+        <a class="nav-item" data-section="history" href="#history">History</a>
+        <a class="nav-item" data-section="bookmarks" href="#bookmarks">Bookmarks <span class="nav-badge" id="badge-bookmarks" hidden></span></a>
+        <a class="nav-item" data-section="downloads" href="#downloads">Downloads <span class="nav-badge" id="badge-downloads" hidden></span></a>
+
+        <div class="nav-group">Settings</div>
+        <a class="nav-item" data-section="appearance" href="#appearance">Appearance &amp; Theme</a>
+        <a class="nav-item" data-section="ai" href="#ai">Local AI</a>
+        <a class="nav-item" data-section="search" href="#search">Search &amp; Startup</a>
+        <a class="nav-item" data-section="shortcuts" href="#shortcuts">Keyboard Shortcuts <span class="nav-badge" id="badge-shortcuts" hidden></span></a>
+        <a class="nav-item" data-section="passwords" href="#passwords">Passwords</a>
+        <a class="nav-item" data-section="privacy" href="#privacy">Privacy &amp; Security</a>
+        <a class="nav-item" data-section="about" href="#about">About</a>
+    </nav>
+
+    <main class="content" id="content">
+
+        <!-- HISTORY -->
+        <section class="page-section" id="history">
+            <h1 class="section-header">History</h1>
+            <p class="section-sub">Pages you visited in normal windows. Private windows never appear here.</p>
+            <div class="tools">
+                <input type="search" id="history-search" placeholder="Search history" autocomplete="off" spellcheck="false" aria-label="Search history" />
+                <button class="btn btn-danger" id="history-clear">Clear history</button>
+            </div>
+            <div class="list" id="history-list"><div class="skeleton"><i></i><i></i><i></i></div></div>
+        </section>
+
+        <!-- BOOKMARKS -->
+        <section class="page-section" id="bookmarks">
+            <h1 class="section-header">Bookmarks</h1>
+            <p class="section-sub">Press the ★ in the address bar to bookmark a page.</p>
+            <div class="tools">
+                <input type="search" id="bookmarks-search" placeholder="Search bookmarks" autocomplete="off" spellcheck="false" aria-label="Search bookmarks" />
+            </div>
+            <div class="list" id="bookmarks-list"><div class="skeleton"><i></i><i></i><i></i></div></div>
+        </section>
+
+        <!-- DOWNLOADS -->
+        <section class="page-section" id="downloads">
+            <h1 class="section-header">Downloads</h1>
+            <p class="section-sub">Files are saved to your Downloads folder.</p>
+            <div class="tools">
+                <input type="search" id="downloads-search" placeholder="Search downloads" autocomplete="off" spellcheck="false" aria-label="Search downloads" />
+                <button class="btn" id="downloads-clear">Clear finished</button>
+            </div>
+            <div class="list" id="downloads-list"><div class="skeleton"><i></i><i></i><i></i></div></div>
+        </section>
+
+        <!-- APPEARANCE -->
+        <section class="page-section" id="appearance">
+            <h1 class="section-header">Appearance &amp; Theme</h1>
+            <p class="section-sub">Changes apply instantly to every window.</p>
+
+            <div class="setting-card">
+                <div class="setting-info">
+                    <h3>Light mode</h3>
+                    <p>Switch the browser and these pages between dark and light.</p>
+                </div>
+                <label class="switch"><input type="checkbox" id="light-mode" aria-label="Light mode"><span class="slider"></span></label>
+            </div>
+
+            <div class="setting-card stack">
+                <div class="setting-info">
+                    <h3>Accent color</h3>
+                    <p>Colors buttons, highlights, the active tab and the new tab page. Pick a preset or choose any color with the rainbow circle.</p>
+                </div>
+                <div class="swatches" id="accent-swatches" role="radiogroup" aria-label="Accent color"></div>
+            </div>
+
+            <div class="setting-card">
+                <div class="setting-info">
+                    <h3>Color the surfaces</h3>
+                    <p>Let the accent tint the toolbar, tabs and these pages, so you get a blue or red theme instead of only blue or red buttons.</p>
+                </div>
+                <select id="tint-select" aria-label="Surface tint">
+                    <option value="off">Off</option>
+                    <option value="subtle">Subtle</option>
+                    <option value="strong">Strong</option>
+                </select>
+            </div>
+
+            <div class="setting-card">
+                <div class="setting-info">
+                    <h3>UI density</h3>
+                    <p>Compact tightens the padding around tabs, toolbar and lists.</p>
+                </div>
+                <select id="density-select" aria-label="UI density">
+                    <option value="comfortable">Comfortable</option>
+                    <option value="compact">Compact</option>
+                </select>
+            </div>
+
+            <div class="setting-card">
+                <div class="setting-info">
+                    <h3>Tab layout</h3>
+                    <p>Vertical tabs live in a sidebar on the left. Press Alt+V to switch quickly.</p>
+                </div>
+                <select id="layout-select" aria-label="Tab layout">
+                    <option value="horizontal">Horizontal (top)</option>
+                    <option value="vertical">Vertical (sidebar)</option>
+                </select>
+            </div>
+
+            <div class="setting-card">
+                <div class="setting-info">
+                    <h3>Collapse tab sidebar</h3>
+                    <p>Show only icons in the vertical sidebar. Only applies to vertical tabs.</p>
+                </div>
+                <label class="switch"><input type="checkbox" id="sidebar-collapsed" aria-label="Collapse tab sidebar"><span class="slider"></span></label>
+            </div>
+
+            <div class="setting-card">
+                <div class="setting-info">
+                    <h3>New tab wallpaper</h3>
+                    <p>Pick an animated preset, or use your own image or live video, on the new tab page.</p>
+                </div>
+                <button class="btn" id="open-newtab">Customize…</button>
+            </div>
+
+            <div class="setting-card">
+                <div class="setting-info">
+                    <h3>Show bookmarks bar</h3>
+                    <p>The row of bookmarks under the address bar.</p>
+                </div>
+                <label class="switch"><input type="checkbox" id="bookmarks-bar" aria-label="Show bookmarks bar"><span class="slider"></span></label>
+            </div>
+        </section>
+
+        <!-- SEARCH & STARTUP -->
+        <section class="page-section" id="ai">
+            <h1 class="section-header">Local AI</h1>
+
+            <div class="setting-card">
+                <div class="setting-info">
+                    <h3>AI summaries and questions</h3>
+                    <p>Let the assistant use a small AI model that runs on your own graphics card. Nothing about the pages you read is sent to any server.</p>
+                </div>
+                <label class="switch"><input type="checkbox" id="ai-toggle" aria-label="Local AI"><span class="slider"></span></label>
+            </div>
+
+            <div class="setting-card">
+                <div class="setting-info">
+                    <h3>Model</h3>
+                    <p>Bigger models write better summaries but need more memory and take longer. The model is downloaded once, the first time you use it.</p>
+                </div>
+                <select id="ai-model" aria-label="Local AI model">
+                    <option value="fast">Fast: Llama 3.2 1B (about 0.7 GB)</option>
+                    <option value="balanced">Balanced: Qwen 2.5 1.5B (about 1 GB)</option>
+                    <option value="smart">Smart: Llama 3.2 3B (about 1.8 GB)</option>
+                </select>
+            </div>
+
+            <div class="setting-card">
+                <div class="setting-info">
+                    <h3>Using it</h3>
+                    <p>Open the assistant with Alt + A, then use Summarise this page, or type a question about the page. Press the gear icon there to download or remove the model. If your computer does not support WebGPU, the assistant keeps using its built-in summaries.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="page-section" id="search">
+            <h1 class="section-header">Search &amp; Startup</h1>
+            <p class="section-sub">What the address bar searches with, and how Neira opens.</p>
+
+            <div class="setting-card">
+                <div class="setting-info">
+                    <h3>Default search engine</h3>
+                    <p>Used for anything you type that isn't a web address.</p>
+                </div>
+                <select id="engine-select" aria-label="Default search engine">
+                    <option value="https://www.google.com/search?q=">Google</option>
+                    <option value="https://www.bing.com/search?q=">Bing</option>
+                    <option value="https://duckduckgo.com/?q=">DuckDuckGo</option>
+                    <option value="https://search.brave.com/search?q=">Brave</option>
+                </select>
+            </div>
+
+            <div class="setting-card">
+                <div class="setting-info">
+                    <h3>New tab page</h3>
+                    <p>What opens when you press Ctrl+T.</p>
+                </div>
+                <select id="newtab-select" aria-label="New tab page">
+                    <option value="neira">Neira new tab (wallpaper and Speed Dial)</option>
+                    <option value="homepage">My home page</option>
+                </select>
+            </div>
+
+            <div class="setting-card">
+                <div class="setting-info grow">
+                    <h3>Home page</h3>
+                    <p>Opens in new tabs and with the “Open home page” shortcut.</p>
+                </div>
+                <input type="url" id="homepage-input" placeholder="https://www.google.com" style="width: 280px" aria-label="Home page" />
+            </div>
+            <div class="status-line" id="home-status" role="status"></div>
+
+            <div class="setting-card">
+                <div class="setting-info">
+                    <h3>Launch in private mode</h3>
+                    <p>New windows (and the window Neira opens with) start as private windows.</p>
+                </div>
+                <label class="switch"><input type="checkbox" id="incognito-startup" aria-label="Launch in private mode"><span class="slider"></span></label>
+            </div>
+        </section>
+
+        <!-- KEYBOARD SHORTCUTS -->
+        <section class="page-section" id="shortcuts">
+            <h1 class="section-header">Keyboard Shortcuts</h1>
+            <p class="section-sub">Click a shortcut, then press the new keys. Changes work immediately, and you can undo any change.</p>
+
+            <div class="sc-sticky">
+                <div class="sc-toolbar">
+                    <input type="search" id="sc-search" placeholder="Search by name or keys…" autocomplete="off" spellcheck="false" aria-label="Search shortcuts" />
+                    <button class="btn" id="sc-export" title="Save your shortcuts to a file">Export</button>
+                    <button class="btn" id="sc-import" title="Load shortcuts from a file">Import</button>
+                    <button class="btn btn-danger" id="sc-reset">Reset all</button>
+                </div>
+                <div class="chips" id="sc-chips" role="group" aria-label="Filter shortcuts"></div>
+                <div class="record-banner" id="record-banner" role="status" hidden>
+                    <div>
+                        <div id="record-title"></div>
+                        <div class="record-hint" id="record-hint">Press the new keys · Esc cancels · Backspace clears</div>
+                    </div>
+                    <div class="record-preview" id="record-preview"></div>
+                </div>
+            </div>
+
+            <div id="sc-body"><div class="list"><div class="skeleton"><i></i><i></i><i></i></div></div></div>
+        </section>
+
+        <!-- PASSWORDS -->
+        <section class="page-section" id="passwords">
+            <h1 class="section-header">Passwords</h1>
+            <p class="section-sub" id="passwords-sub">Click a saved entry to copy its password for 30 seconds.</p>
+            <div class="tools">
+                <button class="btn btn-primary" id="pw-add">Add password</button>
+                <span style="flex:1"></span>
+                <button class="btn" id="pw-import">Import CSV</button>
+                <button class="btn" id="pw-export">Export CSV</button>
+            </div>
+            <div class="list" id="pw-list"><div class="skeleton"><i></i><i></i><i></i></div></div>
+
+            <h2 class="sub-header">Options</h2>
+            <div class="setting-card">
+                <div class="setting-info"><h3>Offer to save passwords</h3></div>
+                <label class="switch"><input type="checkbox" data-setting="offerSave" aria-label="Offer to save passwords"><span class="slider"></span></label>
+            </div>
+            <div class="setting-card">
+                <div class="setting-info"><h3>Create passkeys automatically</h3><p>Let sites upgrade existing accounts to passkeys.</p></div>
+                <label class="switch"><input type="checkbox" data-setting="offerPasskey" aria-label="Create passkeys automatically"><span class="slider"></span></label>
+            </div>
+            <div class="setting-card">
+                <div class="setting-info"><h3>Sign in automatically</h3><p>Remember how you signed in and do it for you.</p></div>
+                <label class="switch"><input type="checkbox" data-setting="autoSignin" aria-label="Sign in automatically"><span class="slider"></span></label>
+            </div>
+
+            <h2 class="sub-header">Declined sites</h2>
+            <div class="list" id="declined-list"></div>
+        </section>
+
+        <!-- PRIVACY -->
+        <section class="page-section" id="privacy">
+            <h1 class="section-header">Privacy &amp; Security</h1>
+            <p class="section-sub">Control what Neira remembers.</p>
+
+            <div class="setting-card">
+                <div class="setting-info">
+                    <h3>Private window</h3>
+                    <p>Browse without saving history, cookies or site data. Everything is wiped when the window closes.</p>
+                </div>
+                <button class="btn btn-primary" id="open-private">Open private window</button>
+            </div>
+
+            <div class="setting-card">
+                <div class="setting-info">
+                    <h3>Clear browsing data</h3>
+                    <p>Deletes history, cookies, site data and cached files. Passwords and bookmarks are kept.</p>
+                </div>
+                <button class="btn btn-danger" id="clear-data">Clear data…</button>
+            </div>
+
+            <div class="setting-card">
+                <div class="setting-info">
+                    <h3>Site permissions</h3>
+                    <p id="perm-desc">Camera, microphone and notification choices you asked Neira to remember.</p>
+                </div>
+                <button class="btn btn-danger" id="perm-reset">Reset choices…</button>
+            </div>
+
+            <div class="setting-card">
+                <div class="setting-info">
+                    <h3>Delete all password data</h3>
+                    <p>Removes every saved password and declined site permanently.</p>
+                </div>
+                <button class="btn btn-danger" id="pw-delete-all">Delete passwords…</button>
+            </div>
+        </section>
+
+        <!-- ABOUT -->
+        <section class="page-section" id="about">
+            <h1 class="section-header">About Neira</h1>
+            <div class="setting-card">
+                <div class="setting-info">
+                    <h3>Neira Browser v1.5.0</h3>
+                    <p>A custom web browser built on Electron.</p>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <div class="snack" id="snack" role="status" hidden>
+        <span id="snack-msg"></span>
+        <button id="snack-undo">Undo</button>
+    </div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <div class="modal-overlay" id="pw-modal">
+        <div class="modal-card" role="dialog" aria-label="Add password">
+            <h3>Add saved password</h3>
+            <input type="text" id="pw-site" placeholder="Website (e.g. github.com)" autocomplete="off" />
+            <input type="text" id="pw-user" placeholder="Username or email" autocomplete="off" />
+            <input type="password" id="pw-pass" placeholder="Password" autocomplete="off" />
+            <div class="form-error" id="pw-error"></div>
+            <div class="modal-actions">
+                <button class="btn" id="pw-cancel">Cancel</button>
+                <button class="btn btn-primary" id="pw-save">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="pages.js"></script>
+</body>
+</html>

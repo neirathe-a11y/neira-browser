@@ -1,0 +1,363 @@
+/* ==========================================================================
+   Neira assistant: motion and polish.
+   Loaded AFTER the inline <style> in index.html, so it only restyles; it needs no JS changes.
+   (assistant-fx.js adds a few optional touches: spotlight, press glow, "copied" tick.)
+   Uses the theme variables (--accent, --on-accent, --bg-*, --text-*), so every accent colour,
+   light/dark and private mode follow automatically.
+   ========================================================================== */
+
+@property --fx-angle { syntax: '<angle>'; inherits: false; initial-value: 0deg; }
+
+.assistant {
+    --fx-ease: cubic-bezier(0.22, 1, 0.36, 1);
+    --fx-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+    --fx-glow: color-mix(in srgb, var(--accent) 60%, transparent);
+    --fx-glow-soft: color-mix(in srgb, var(--accent) 20%, transparent);
+    --fx-edge: color-mix(in srgb, var(--accent) 38%, var(--border-color));
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    background:
+        radial-gradient(120% 55% at 100% 0%, color-mix(in srgb, var(--accent) 15%, transparent), transparent 62%),
+        radial-gradient(90% 45% at 0% 100%, color-mix(in srgb, var(--accent) 9%, transparent), transparent 68%),
+        var(--bg-toolbar);
+}
+.assistant:not([hidden]) { animation: fxPanelIn 0.45s var(--fx-ease) both; }
+
+/* ---------- Header ---------- */
+.assistant .assistant-head {
+    position: relative;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 9%, transparent), transparent);
+    backdrop-filter: blur(10px);
+}
+.assistant .assistant-head::after {
+    content: ""; position: absolute; left: 0; right: 0; bottom: -1px; height: 1px; pointer-events: none;
+    background: linear-gradient(90deg, transparent, var(--fx-glow), transparent); opacity: 0.8;
+}
+.assistant .as-logo {
+    position: relative;
+    background: conic-gradient(from var(--fx-angle), var(--accent), color-mix(in srgb, var(--accent) 45%, #fff), var(--accent));
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, #fff 22%, transparent), 0 4px 18px -4px var(--fx-glow);
+    animation: fxAngle 7s linear infinite;
+}
+.assistant .assistant-head .nav-btn {
+    border-radius: 8px;
+    transition: transform 0.25s var(--fx-spring), background 0.2s, box-shadow 0.25s, color 0.2s;
+}
+.assistant .assistant-head .nav-btn:hover { transform: translateY(-1px); box-shadow: 0 0 0 1px var(--fx-edge), 0 6px 16px -6px var(--fx-glow); }
+.assistant .assistant-head .nav-btn:active { transform: scale(0.88); }
+#assistant-settings[aria-expanded="true"] { transform: rotate(60deg); background: var(--fx-glow-soft); box-shadow: 0 0 0 1px var(--fx-edge); }
+#assistant-settings[aria-expanded="true"]:hover { transform: rotate(60deg) translateY(-1px); }
+
+/* ---------- Local AI sheet ---------- */
+.assistant .as-sheet {
+    background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 7%, var(--bg-tab)), var(--bg-tab));
+    transform-origin: top;
+}
+.assistant .as-sheet:not([hidden]) { animation: fxSheetIn 0.35s var(--fx-ease) both; }
+.assistant .as-row input[type="checkbox"] {
+    appearance: none; -webkit-appearance: none; position: relative; width: 40px; height: 23px; flex: none; cursor: pointer;
+    border-radius: 999px; background: var(--bg-input); border: 1px solid var(--border-color);
+    transition: background 0.3s var(--fx-ease), border-color 0.3s, box-shadow 0.3s;
+}
+.assistant .as-row input[type="checkbox"]::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 17px; height: 17px; border-radius: 50%;
+    background: var(--text-muted); transition: transform 0.35s var(--fx-spring), background 0.3s, box-shadow 0.3s;
+}
+.assistant .as-row input[type="checkbox"]:checked { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 16px -2px var(--fx-glow); }
+.assistant .as-row input[type="checkbox"]:checked::after { transform: translateX(17px); background: var(--on-accent); }
+.assistant .as-row input[type="checkbox"]:active::after { width: 21px; }
+.assistant .as-row input[type="checkbox"]:checked:active::after { transform: translateX(13px); }
+.assistant .as-row select, .assistant .as-ask input { transition: border-color 0.25s, box-shadow 0.3s, background 0.25s; }
+.assistant .as-row select:focus, .assistant .as-ask input:focus { box-shadow: 0 0 0 3px var(--fx-glow-soft), 0 6px 18px -8px var(--fx-glow); }
+
+/* ---------- Scroll area ---------- */
+.assistant .assistant-body {
+    scrollbar-color: color-mix(in srgb, var(--accent) 45%, transparent) transparent;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+    mask-image: linear-gradient(to bottom, transparent 0, #000 14px, #000 calc(100% - 14px), transparent 100%);
+}
+
+/* ---------- Empty state ---------- */
+.assistant .as-empty .as-logo {
+    animation: fxAngle 7s linear infinite, fxFloat 4s ease-in-out infinite;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, #fff 22%, transparent), 0 10px 30px -6px var(--fx-glow);
+}
+.assistant .as-empty .as-logo::after {
+    content: ""; position: absolute; inset: -7px; border-radius: 18px; border: 1px solid var(--fx-glow);
+    animation: fxRing 2.6s ease-out infinite;
+}
+.assistant .as-empty li {
+    transition: transform 0.3s var(--fx-ease), border-color 0.3s, box-shadow 0.3s;
+    animation: fxRise 0.6s var(--fx-ease) both;
+}
+.assistant .as-empty li:nth-child(1) { animation-delay: 0.1s; }
+.assistant .as-empty li:nth-child(2) { animation-delay: 0.2s; }
+.assistant .as-empty li:hover { transform: translateX(3px); border-color: var(--accent); box-shadow: 0 8px 22px -12px var(--fx-glow); }
+
+/* ---------- Messages: slide up and fade in ---------- */
+.assistant .as-msg { animation: fxRise 0.5s var(--fx-ease) both; }
+.assistant .as-user { animation-name: fxRiseRight; }
+.assistant .as-user + .as-card { animation-delay: 0.12s; }
+
+.assistant .as-user {
+    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 68%, #000));
+    color: var(--on-accent);
+    border: 1px solid color-mix(in srgb, #fff 20%, transparent);
+    box-shadow: 0 10px 24px -12px var(--fx-glow), inset 0 1px 0 color-mix(in srgb, #fff 25%, transparent);
+    font-weight: 500;
+}
+:root.private .assistant .as-user { color: #1b1428; }
+
+/* ---------- Answer card ---------- */
+.assistant .as-card {
+    position: relative;
+    isolation: isolate;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--bg-input) 90%, var(--accent) 10%), var(--bg-input));
+    border: 1px solid color-mix(in srgb, var(--border-color) 80%, var(--accent) 20%);
+    box-shadow: 0 14px 34px -18px rgba(0, 0, 0, 0.65), inset 0 1px 0 color-mix(in srgb, #fff 6%, transparent);
+    transition: border-color 0.3s, box-shadow 0.4s;
+}
+:root.light-theme .assistant .as-card { box-shadow: 0 14px 34px -20px rgba(20, 20, 60, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.7); }
+.assistant .as-card:hover { border-color: var(--fx-edge); }
+
+/* rotating light ring while the card is thinking or writing */
+.assistant .as-card::before {
+    content: ""; position: absolute; inset: 0; z-index: 0; border-radius: inherit; padding: 1.5px; pointer-events: none;
+    background: conic-gradient(from var(--fx-angle), transparent 0 55%, color-mix(in srgb, var(--accent) 35%, #fff) 78%, var(--accent) 88%, transparent 100%);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+    opacity: 0; transition: opacity 0.5s;
+}
+/* cursor-following spotlight */
+.assistant .as-card::after {
+    content: ""; position: absolute; inset: 0; z-index: 0; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity 0.4s;
+    background: radial-gradient(260px circle at var(--mx, 50%) var(--my, 0%), color-mix(in srgb, var(--accent) 15%, transparent), transparent 70%);
+}
+.assistant .as-card:hover::after { opacity: 1; }
+
+/* "streaming" = the card has the answer body and only the Stop button. assistant-fx.js adds .is-streaming too;
+   the :has() form means it works without the script. */
+.assistant .as-card:is(.is-streaming, :has(.as-md):has(.as-actions > .as-link:only-child)),
+.assistant .as-card:is(.is-loading, :has(.as-skel), :has(.as-progress)) {
+    border-color: var(--fx-edge);
+    box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 18%, transparent), 0 18px 44px -18px var(--fx-glow);
+}
+.assistant .as-card:is(.is-streaming, :has(.as-md):has(.as-actions > .as-link:only-child))::before,
+.assistant .as-card:is(.is-loading, :has(.as-skel), :has(.as-progress))::before {
+    opacity: 1; animation: fxAngle 2.6s linear infinite;
+}
+
+/* the content of a card rises in, one piece after another */
+.assistant .as-card > * { position: relative; z-index: 1; animation: fxRise 0.55s var(--fx-ease) both; }
+.assistant .as-card > :nth-child(2) { animation-delay: 0.05s; }
+.assistant .as-card > :nth-child(3) { animation-delay: 0.1s; }
+.assistant .as-card > :nth-child(4) { animation-delay: 0.15s; }
+.assistant .as-card > :nth-child(5) { animation-delay: 0.2s; }
+.assistant .as-card > :nth-child(n + 6) { animation-delay: 0.25s; }
+
+.assistant .as-badge {
+    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 65%, #000));
+    box-shadow: 0 4px 14px -4px var(--fx-glow); letter-spacing: 0.02em;
+}
+.assistant .as-meta { letter-spacing: 0.02em; }
+.assistant .as-card h3 { font-size: 15.5px; letter-spacing: -0.005em; }
+
+/* ---------- Streaming text: glowing caret and "thinking" pulse ---------- */
+.assistant .as-md { font-size: 13.5px; line-height: 1.65; }
+.assistant .as-md p { margin-bottom: 10px; }
+
+.assistant .as-card:is(.is-streaming, :has(.as-md):has(.as-actions > .as-link:only-child)) .as-md > p:last-child::after,
+.assistant .as-card:is(.is-streaming, :has(.as-md):has(.as-actions > .as-link:only-child)) .as-md > h4:last-child::after,
+.assistant .as-card:is(.is-streaming, :has(.as-md):has(.as-actions > .as-link:only-child)) .as-md > ul:last-child > li:last-child::after {
+    content: ""; display: inline-block; width: 8px; height: 1.1em; margin-left: 4px; vertical-align: text-bottom; border-radius: 3px;
+    background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 40%, #fff), var(--accent));
+    box-shadow: 0 0 8px var(--accent), 0 0 22px var(--fx-glow);
+    animation: fxCaret 1.05s ease-in-out infinite;
+}
+/* before the first token arrives */
+.assistant .as-md:empty { display: flex; align-items: center; gap: 10px; min-height: 24px; }
+.assistant .as-md:empty::before {
+    content: ""; width: 10px; height: 10px; border-radius: 50%; background: var(--accent);
+    box-shadow: 0 0 14px var(--accent), 0 0 30px var(--fx-glow); animation: fxPulse 1.1s ease-in-out infinite;
+}
+.assistant .as-md:empty::after { content: "Thinking…"; color: var(--text-muted); font-size: 12px; letter-spacing: 0.04em; }
+
+/* ---------- Markdown polish ---------- */
+.assistant .as-md h4, .assistant .as-sub {
+    padding-bottom: 6px; margin: 16px 0 10px; font-weight: 700; letter-spacing: 0.09em;
+    background: linear-gradient(90deg, var(--fx-edge), transparent 85%) no-repeat bottom / 100% 1px;
+}
+.assistant .as-md > h4:first-child { margin-top: 4px; }
+
+.assistant .as-md li, .assistant .as-points li { padding-left: 21px; }
+.assistant .as-md li::before, .assistant .as-points li::before {
+    left: 3px; top: 0.6em; width: 7px; height: 7px;
+    background: radial-gradient(circle at 35% 35%, color-mix(in srgb, #fff 75%, var(--accent)), var(--accent) 62%);
+    box-shadow: 0 0 0 3px var(--fx-glow-soft), 0 0 12px var(--fx-glow);
+    transition: transform 0.3s var(--fx-spring), box-shadow 0.3s;
+}
+.assistant .as-md li:hover::before, .assistant .as-points li:hover::before { transform: scale(1.5); box-shadow: 0 0 0 4px var(--fx-glow-soft), 0 0 18px var(--accent); }
+
+/* bold lead labels become small chips */
+.assistant .as-md li > strong:first-child, .assistant .as-points li > strong:first-child {
+    display: inline; padding: 1px 8px; margin-right: 4px; border-radius: 7px; box-decoration-break: clone; -webkit-box-decoration-break: clone;
+    font-size: 0.93em; font-weight: 700; color: color-mix(in srgb, var(--accent) 55%, var(--text-main));
+    background: color-mix(in srgb, var(--accent) 14%, transparent);
+    border: 1px solid color-mix(in srgb, var(--accent) 28%, transparent);
+}
+.assistant .as-md strong, .assistant .as-points strong { font-weight: 700; }
+.assistant .as-md p > strong { color: color-mix(in srgb, var(--accent) 45%, var(--text-main)); }
+
+/* code (ready for backticks and fenced blocks if the renderer ever emits them) */
+.assistant .as-card code {
+    font: 12px/1.5 ui-monospace, "Cascadia Code", "SFMono-Regular", Consolas, monospace;
+    padding: 2px 7px; border-radius: 6px;
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg-tab));
+    border: 1px solid color-mix(in srgb, var(--accent) 22%, transparent);
+}
+.assistant .as-md pre {
+    position: relative; margin: 12px 0; padding: 34px 14px 12px; overflow-x: auto; border-radius: 12px;
+    background: linear-gradient(180deg, color-mix(in srgb, #000 38%, var(--bg-input)), color-mix(in srgb, #000 24%, var(--bg-input)));
+    border: 1px solid var(--fx-edge); scrollbar-width: thin;
+    box-shadow: inset 0 1px 0 color-mix(in srgb, #fff 6%, transparent), 0 12px 26px -16px rgba(0, 0, 0, 0.7);
+}
+.assistant .as-md pre::before {
+    content: ""; position: absolute; top: 12px; left: 14px; width: 8px; height: 8px; border-radius: 50%;
+    background: #ff5f57; box-shadow: 14px 0 #febc2e, 28px 0 #28c840;
+}
+.assistant .as-md pre code { display: block; padding: 0; background: none; border: 0; white-space: pre; }
+:root.light-theme .assistant .as-md pre { background: color-mix(in srgb, #000 5%, var(--bg-input)); }
+.assistant .as-md blockquote {
+    margin: 10px 0; padding: 4px 0 4px 12px; border-left: 3px solid var(--accent);
+    background: linear-gradient(90deg, var(--fx-glow-soft), transparent); border-radius: 0 8px 8px 0; color: var(--text-muted);
+}
+
+/* chips under a summary */
+.assistant .as-chip { transition: transform 0.25s var(--fx-spring), background 0.25s, box-shadow 0.3s; animation: fxPop 0.45s var(--fx-spring) both; }
+.assistant .as-chip:nth-child(2) { animation-delay: 0.04s; } .assistant .as-chip:nth-child(3) { animation-delay: 0.08s; }
+.assistant .as-chip:nth-child(4) { animation-delay: 0.12s; } .assistant .as-chip:nth-child(5) { animation-delay: 0.16s; }
+.assistant .as-chip:nth-child(n + 6) { animation-delay: 0.2s; }
+.assistant .as-chip:hover { transform: translateY(-2px); background: color-mix(in srgb, var(--accent) 32%, transparent); box-shadow: 0 6px 16px -6px var(--fx-glow); }
+
+/* bullets of the standard (non-AI) summary arrive one by one */
+.assistant .as-points li { animation: fxRise 0.5s var(--fx-ease) both; }
+.assistant .as-points li:nth-child(2) { animation-delay: 0.06s; } .assistant .as-points li:nth-child(3) { animation-delay: 0.12s; }
+.assistant .as-points li:nth-child(4) { animation-delay: 0.18s; } .assistant .as-points li:nth-child(5) { animation-delay: 0.24s; }
+.assistant .as-points li:nth-child(n + 6) { animation-delay: 0.3s; }
+
+/* ---------- Loading: shimmer and progress ---------- */
+.assistant .as-skel {
+    background: linear-gradient(90deg, var(--bg-tab) 25%, color-mix(in srgb, var(--accent) 24%, var(--bg-tab-active)) 50%, var(--bg-tab) 75%);
+    background-size: 200% 100%;
+}
+.assistant .as-bar { box-shadow: inset 0 0 0 1px var(--border-color); }
+.assistant .as-bar-fill {
+    position: relative; overflow: hidden;
+    background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 50%, #fff));
+    box-shadow: 0 0 14px var(--fx-glow);
+}
+.assistant .as-bar-fill::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(100deg, transparent 20%, rgba(255, 255, 255, 0.55) 50%, transparent 80%);
+    transform: translateX(-100%); animation: fxSweep 1.4s ease-in-out infinite;
+}
+.assistant .as-note { background: linear-gradient(90deg, var(--fx-glow-soft), transparent 70%); border-radius: 0 8px 8px 0; padding: 6px 10px; }
+
+/* ---------- Buttons: hover lift, glow, press ---------- */
+.assistant .as-actions { border-top: 0; position: relative; gap: 8px; flex-wrap: wrap; }
+.assistant .as-actions::before {
+    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 1px;
+    background: linear-gradient(90deg, var(--fx-edge), transparent);
+}
+.assistant .as-actions > * { animation: fxPop 0.4s var(--fx-spring) both; }
+.assistant .as-actions > :nth-child(2) { animation-delay: 0.05s; }
+.assistant .as-actions > :nth-child(3) { animation-delay: 0.1s; }
+
+.assistant .as-link, .assistant .secondary-btn, .assistant .primary-btn, .assistant .seg button {
+    position: relative; overflow: hidden;
+    transition: transform 0.25s var(--fx-spring), border-color 0.25s, box-shadow 0.3s, background 0.25s, color 0.2s, filter 0.2s;
+}
+/* press glow that starts where you click (--px/--py are set by assistant-fx.js; centred without it) */
+.assistant .as-link::before, .assistant .secondary-btn::before, .assistant .primary-btn::before {
+    content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.6s;
+    background: radial-gradient(circle at var(--px, 50%) var(--py, 50%), color-mix(in srgb, #fff 45%, transparent), transparent 58%);
+}
+.assistant .as-link:active::before, .assistant .secondary-btn:active::before, .assistant .primary-btn:active::before { opacity: 1; transition-duration: 0.05s; }
+
+.assistant .as-link {
+    display: inline-flex; align-items: center; gap: 6px; padding: 5px 13px; border-radius: 999px;
+    border: 1px solid var(--border-color); background: color-mix(in srgb, var(--bg-tab) 80%, transparent);
+    color: var(--text-main); font-size: 12px; font-weight: 600;
+}
+.assistant .as-link:hover {
+    text-decoration: none; transform: translateY(-1px); border-color: var(--accent); color: color-mix(in srgb, var(--accent) 70%, var(--text-main));
+    box-shadow: 0 0 0 3px var(--fx-glow-soft), 0 8px 20px -8px var(--fx-glow);
+}
+.assistant .as-link:active { transform: scale(0.94); }
+.assistant .as-link.did-copy { border-color: #3ddc97; color: #3ddc97; box-shadow: 0 0 0 3px rgba(61, 220, 151, 0.18); }
+.assistant .as-link.did-copy::after { content: "✓"; font-weight: 800; animation: fxPop 0.35s var(--fx-spring) both; }
+
+/* the Stop button while the model writes */
+.assistant .as-card:is(.is-streaming, :has(.as-md):has(.as-actions > .as-link:only-child)) .as-actions .as-link {
+    color: #ff8f8f; border-color: color-mix(in srgb, #ff6b6b 45%, transparent); background: color-mix(in srgb, #ff6b6b 10%, transparent);
+}
+.assistant .as-card:is(.is-streaming, :has(.as-md):has(.as-actions > .as-link:only-child)) .as-actions .as-link::after {
+    content: ""; order: -1; width: 8px; height: 8px; border-radius: 2px; background: currentColor; box-shadow: 0 0 10px currentColor;
+    animation: fxPulse 1.1s ease-in-out infinite;
+}
+.assistant .as-card:is(.is-streaming, :has(.as-md):has(.as-actions > .as-link:only-child)) .as-actions .as-link:hover {
+    box-shadow: 0 0 0 3px rgba(255, 107, 107, 0.2), 0 8px 20px -8px rgba(255, 107, 107, 0.7);
+}
+
+.assistant .primary-btn {
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 70%, #000));
+    box-shadow: 0 10px 24px -12px var(--fx-glow), inset 0 1px 0 color-mix(in srgb, #fff 28%, transparent);
+}
+:root.private .assistant .primary-btn { background: var(--accent); }
+.assistant .primary-btn::after {
+    content: ""; position: absolute; inset: 0; pointer-events: none; transform: translateX(-120%);
+    background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.38) 50%, transparent 70%);
+    transition: transform 0.75s var(--fx-ease);
+}
+.assistant .primary-btn:hover {
+    transform: translateY(-1px); filter: brightness(1.06);
+    box-shadow: 0 14px 30px -12px var(--fx-glow), 0 0 0 3px var(--fx-glow-soft), inset 0 1px 0 color-mix(in srgb, #fff 28%, transparent);
+}
+.assistant .primary-btn:hover::after { transform: translateX(120%); }
+.assistant .primary-btn:active { transform: scale(0.965); }
+
+.assistant .secondary-btn { border-radius: 10px; }
+.assistant .secondary-btn:hover { transform: translateY(-1px); border-color: var(--accent); box-shadow: 0 0 0 3px var(--fx-glow-soft), 0 8px 20px -10px var(--fx-glow); }
+.assistant .secondary-btn:active { transform: scale(0.95); }
+#ask-btn:hover { background: var(--accent); color: var(--on-accent); }
+
+.assistant .seg button:hover:not(.active) { color: var(--text-main); background: var(--fx-glow-soft); }
+.assistant .seg button:active { transform: scale(0.94); }
+.assistant .seg button.active {
+    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 72%, #000));
+    box-shadow: 0 6px 16px -6px var(--fx-glow);
+}
+.assistant :is(button, input, select):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ---------- Keyframes ---------- */
+@keyframes fxPanelIn { from { opacity: 0; transform: translateX(22px); } to { opacity: 1; transform: none; } }
+@keyframes fxSheetIn { from { opacity: 0; transform: translateY(-8px) scaleY(0.96); } to { opacity: 1; transform: none; } }
+@keyframes fxRise { from { opacity: 0; transform: translateY(14px) scale(0.985); filter: blur(4px); } to { opacity: 1; transform: none; filter: blur(0); } }
+@keyframes fxRiseRight { from { opacity: 0; transform: translate(14px, 12px) scale(0.97); filter: blur(4px); } to { opacity: 1; transform: none; filter: blur(0); } }
+@keyframes fxPop { from { opacity: 0; transform: scale(0.8); } to { opacity: 1; transform: none; } }
+@keyframes fxAngle { to { --fx-angle: 360deg; } }
+@keyframes fxFloat { 0%, 100% { translate: 0 0; } 50% { translate: 0 -5px; } }
+@keyframes fxRing { 0% { opacity: 0.8; transform: scale(0.92); } 100% { opacity: 0; transform: scale(1.35); } }
+@keyframes fxCaret { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
+@keyframes fxPulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(0.65); opacity: 0.55; } }
+@keyframes fxSweep { to { transform: translateX(100%); } }
+
+@media (prefers-reduced-motion: reduce) {
+    .assistant, .assistant *, .assistant *::before, .assistant *::after {
+        animation-duration: 0.001ms !important; animation-delay: 0s !important; animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+    }
+}
