@@ -6,7 +6,7 @@ on:
       - 'v*'
 
 jobs:
-  release:
+  build:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Build and Publish
-        run: npx electron-builder --publish always
+      - name: Build with electron-builder
+        run: npx electron-builder --win --mac
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
