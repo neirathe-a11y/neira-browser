@@ -12,10 +12,8 @@ jobs:
       matrix:
         include:
           - os: windows-latest
-            artifact_name: win
             build_flag: --win
           - os: macos-latest
-            artifact_name: mac
             build_flag: --mac
 
     steps:
@@ -31,6 +29,38 @@ jobs:
         run: npm install
 
       - name: Build with electron-builder
-        run: npx electron-builder ${{ matrix.build_flag }} --publish always
+        run: npx electron-builder ${{ matrix.build_flag }} --publish never
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-artifacts-${{ matrix.os }}
+          path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.zip
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all workflow artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-artifacts
+
+      - name: Display structure of downloaded files
+        run: ls -R all-artifacts
+
+      - name: Release and Upload Assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            all-artifacts/dist-artifacts-windows-latest/*.exe
+            all-artifacts/dist-artifacts-windows-latest/*.dmg
+            all-artifacts/dist-artifacts-macos-latest/*.dmg
+            all-artifacts/dist-artifacts-macos-latest/*.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
