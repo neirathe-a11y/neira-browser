@@ -10,7 +10,13 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [windows-latest, macos-latest]
+        include:
+          - os: windows-latest
+            artifact_name: win
+            build_flag: --win
+          - os: macos-latest
+            artifact_name: mac
+            build_flag: --mac
 
     steps:
       - name: Checkout code
@@ -25,6 +31,6 @@ jobs:
         run: npm install
 
       - name: Build with electron-builder
-        run: npx electron-builder --win --mac
+        run: npx electron-builder ${{ matrix.build_flag }} --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
