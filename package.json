@@ -23,12 +23,14 @@
     "win": {
       "target": [
         "nsis"
-      ]
+      ],
+      "artifactName": "NeiraSetup.exe"
     },
     "mac": {
       "target": [
         "dmg"
-      ]
+      ],
+      "artifactName": "Neira-Installer.dmg"
     },
     "publish": {
       "provider": "github",
