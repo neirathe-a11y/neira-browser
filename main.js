@@ -1338,5 +1338,37 @@ app.on('window-all-closed', () => {
     ];
     const menu = Menu.buildFromTemplate(template);
     menu.popup({ window: BrowserWindow.fromWebContents(event.sender) });
+    const { app, BrowserWindow, dialog } = require('electron');
+const { autoUpdater } = require('electron-updater');
+
+let mainWindow;
+
+function createWindow() {
+  mainWindow = new BrowserWindow({
+    width: 1200,
+    height: 800,
+  });
+  mainWindow.loadURL('index.html');
+
+  // Only check for updates if the app is packaged/installed
+  if (app.isPackaged) {
+    autoUpdater.checkForUpdatesAndNotify();
+  }
+}
+
+autoUpdater.on('update-downloaded', () => {
+  dialog.showMessageBox({
+    type: 'info',
+    title: 'Update Ready',
+    message: 'A new version of Neira has been downloaded. Restart the application to apply the update.',
+    buttons: ['Restart', 'Later']
+  }).result.then((buttonIndex) => {
+    if (buttonIndex.response === 0) autoUpdater.quitAndInstall();
+  });
+});
+
+app.whenReady().then(() => {
+  createWindow();
+});
 });
 });
