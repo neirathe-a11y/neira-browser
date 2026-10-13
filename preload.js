@@ -4,7 +4,6 @@ const { contextBridge, ipcRenderer } = require('electron');
 const invoke = (channel, ...args) => ipcRenderer.invoke(channel, ...args);
 const send = (channel, ...args) => ipcRenderer.send(channel, ...args);
 
-// Returns subscribe(callback) -> unsubscribe()
 const on = channel => callback => {
     const handler = (_event, ...args) => callback(...args);
     ipcRenderer.on(channel, handler);
@@ -15,13 +14,11 @@ contextBridge.exposeInMainWorld('neira', {
     confirm: message => invoke('dialog:confirm', message),
     copy: text => invoke('clipboard:write', text),
 
-    // Actions that need the main process (windows, dialogs)
     runMainAction: id => send('action:run', id),
     savePage: webContentsId => invoke('page:save', webContentsId),
     clearBrowsingData: () => invoke('browsing:clear'),
     devtools: { showConsole: webContentsId => invoke('devtools:console', webContentsId) },
 
-    // Browser window
     onAction: on('shortcut:action'),
     onOpenUrl: on('open-url'),
     onModifierReleased: on('shortcut:modifier-released'),
@@ -34,7 +31,6 @@ contextBridge.exposeInMainWorld('neira', {
         set: (key, value) => invoke('settings:set', key, value),
         onChange: on('settings:changed')
     },
-
     shortcuts: {
         get: () => invoke('shortcuts:get'),
         set: (id, combo) => invoke('shortcuts:set', id, combo),
@@ -50,7 +46,6 @@ contextBridge.exposeInMainWorld('neira', {
         onRecordInvalid: on('shortcuts:record-invalid'),
         onRecordPreview: on('shortcuts:record-preview')
     },
-
     bookmarks: {
         get: () => invoke('bookmarks:get'),
         toggle: entry => invoke('bookmarks:toggle', entry),
@@ -58,7 +53,6 @@ contextBridge.exposeInMainWorld('neira', {
         remove: url => invoke('bookmarks:remove', url),
         onChange: on('bookmarks:changed')
     },
-
     history: {
         get: () => invoke('history:get'),
         add: entry => invoke('history:add', entry),
@@ -66,7 +60,6 @@ contextBridge.exposeInMainWorld('neira', {
         clear: () => invoke('history:clear'),
         onChange: on('history:changed')
     },
-
     passwords: {
         list: () => invoke('passwords:list'),
         add: entry => invoke('passwords:add', entry),
@@ -78,8 +71,6 @@ contextBridge.exposeInMainWorld('neira', {
         removeDeclined: site => invoke('passwords:remove-declined', site),
         clear: () => invoke('passwords:clear')
     },
-
-    // New tab page
     newtab: { go: (text, newTab) => send('newtab:go', text, !!newTab) },
     speedDial: {
         get: () => invoke('speeddial:get'),
@@ -89,7 +80,6 @@ contextBridge.exposeInMainWorld('neira', {
         onChange: on('speeddial:changed')
     },
     wallpaper: { choose: () => invoke('wallpaper:choose') },
-
     profiles: {
         list: () => invoke('profiles:list'),
         add: opts => invoke('profiles:add', opts),
@@ -98,12 +88,10 @@ contextBridge.exposeInMainWorld('neira', {
         switch: id => invoke('profiles:switch', id),
         onChange: on('profiles:changed')
     },
-
     permissions: {
         list: () => invoke('permissions:list'),
         clear: () => invoke('permissions:clear')
     },
-
     downloads: {
         get: () => invoke('downloads:get'),
         open: id => invoke('downloads:open', id),
@@ -111,5 +99,29 @@ contextBridge.exposeInMainWorld('neira', {
         cancel: id => invoke('downloads:cancel', id),
         clear: () => invoke('downloads:clear'),
         onChange: on('downloads:changed')
+    },
+    parental: {
+        status: () => invoke('parental:status'),
+        setup: pin => invoke('parental:setup', pin),
+        verify: pin => invoke('parental:verify', pin),
+        changePin: (currentPin, newPin) => invoke('parental:change-pin', currentPin, newPin),
+        recover: (code, newPin) => invoke('parental:recover', code, newPin),
+        regenerateRecovery: pin => invoke('parental:regenerate-recovery', pin),
+        forgotInfo: () => invoke('parental:forgot-info'),
+        update: patch => invoke('parental:update', patch),
+        enable: pin => invoke('parental:enable', pin),
+        disable: pin => invoke('parental:disable', pin),
+        resetDay: () => invoke('parental:reset-day'),
+        clearBlocks: () => invoke('parental:clear-blocks'),
+        onChanged: on('parental:changed'),
+        onUsage: on('parental:usage'),
+        onBlocked: on('parental:blocked')
+    },
+    extensions: {
+        load: () => invoke('extensions:load'),
+        list: () => invoke('extensions:list'),
+        remove: id => invoke('extensions:remove', id),
+        setEnabled: (id, enabled) => invoke('extensions:set-enabled', id, enabled),
+        onChange: on('extensions:changed')
     }
 });

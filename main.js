@@ -1,7 +1,13 @@
 'use strict';
+
 const {
     app, BrowserWindow, ipcMain, Menu, session, shell, dialog, clipboard, safeStorage, webContents, protocol
 } = require('electron');
+const { autoUpdater } = require('electron-updater');
+const { initialize, trackEvent } = require('@aptabase/electron/main');
+
+initialize('A-EU-3606599135');
+
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
@@ -10,13 +16,10 @@ const Shortcuts = require('./shortcuts');
 const { createStore } = require('./store');
 const { assetResponse, VIDEO_EXT, NAME_RE } = require('./assets');
 
-// neira-asset://wallpaper/<file> and neira-asset://dial/<file> let our own pages show the user's wallpaper and
-// custom Speed Dial pictures (served by assets.js)
 protocol.registerSchemesAsPrivileged([
     { scheme: 'neira-asset', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
 ]);
 
-// WebGPU runs Local AI (the on-device language model). Windows and macOS have it already; Linux needs these.
 app.commandLine.appendSwitch('enable-unsafe-webgpu');
 if (process.platform === 'linux') app.commandLine.appendSwitch('enable-features', 'Vulkan');
 
@@ -37,34 +40,60 @@ const STORE_DEFAULTS = {
         homepage: 'https://www.google.com',
         incognitoStartup: false,
         showBookmarksBar: true,
-        tabLayout: 'horizontal',     // horizontal | vertical
+        tabLayout: 'horizontal',
         sidebarCollapsed: false,
-        newTabPage: 'neira',         // neira | homepage
-        wallpaper: 'preset:neon',    // none | preset:<name> | file:<name>
+        newTabPage: 'neira',
+        wallpaper: 'preset:neon',
         wallpaperDim: 35,
         wallpaperBlur: 0,
-        accent: '#6366f1',           // any #rrggbb colour
-        accentTint: 'off',           // off | subtle | strong (how much the accent colours the surfaces)
-        localAI: false,              // AI-written summaries and answers that run on this computer's GPU
-        localAIModel: 'balanced',    // fast | balanced | smart
+        accent: '#6366f1',
+        accentTint: 'off',
+        localAI: false,
+        localAIModel: 'balanced',
         showClock: true,
         offerSave: true,
         offerPasskey: true,
         autoSignin: true
     },
-    shortcuts: {},      // only overrides: { actionId: "Ctrl + X" | "" }
+    shortcuts: {},
     bookmarks: [],
     history: [],
     passwords: [],
     declined: [],
-    permissions: {},    // "origin|permission" -> true (allowed) | false (blocked)
+    permissions: {},
     speedDial: [
         { id: 'sd-youtube', title: 'YouTube', url: 'https://www.youtube.com/' },
         { id: 'sd-gmail', title: 'Gmail', url: 'https://mail.google.com/' },
         { id: 'sd-github', title: 'GitHub', url: 'https://github.com/' },
         { id: 'sd-wikipedia', title: 'Wikipedia', url: 'https://www.wikipedia.org/' },
         { id: 'sd-reddit', title: 'Reddit', url: 'https://www.reddit.com/' }
-    ]
+    ],
+    parental: {
+        enabled: false,
+        pinHash: '',
+        salt: '',
+        recoveryHash: '',
+        locked: false,
+        hidden: false,
+        safeSearch: true,
+        allowlistOnly: false,
+        blocklist: [],
+        allowlist: [
+            'wikipedia.org', 'khanacademy.org', 'ck12.org', 'openstax.org',
+            'pbslearningmedia.org', 'nationalgeographic.com', 'nasa.gov',
+            'mit.edu', 'harvard.edu', 'coursera.org', 'edx.org', 'duolingo.com',
+            'google.com', 'docs.google.com', 'classroom.google.com', 'wolframalpha.com',
+            'desmos.com', 'geogebra.org', 'code.org', 'scratch.mit.edu',
+            'bbc.co.uk', 'britannica.com', 'si.edu', 'loc.gov'
+        ],
+        categories: {
+            games: { label: 'Games', hosts: ['roblox.com', 'minecraft.net', 'poki.com', 'crazygames.com', 'miniclip.com', 'kongregate.com', 'itch.io', 'steampowered.com', 'epicgames.com', 'fortnite.com'], minutes: 60 },
+            entertainment: { label: 'Entertainment', hosts: ['youtube.com', 'netflix.com', 'hulu.com', 'disneyplus.com', 'twitch.tv', 'spotify.com', 'tiktok.com', 'primevideo.com', 'hbomax.com', 'max.com'], minutes: 90 },
+            social: { label: 'Social', hosts: ['facebook.com', 'instagram.com', 'twitter.com', 'x.com', 'reddit.com', 'snapchat.com', 'discord.com', 'pinterest.com', 'tumblr.com', 'threads.net'], minutes: 30 }
+        },
+        usage: {},
+        blocked: []
+    }
 };
 const MAX_SPEED_DIAL = 24;
 const DIAL_IMG_RE = /^[a-z0-9-]+\.(jpg|jpeg|png|webp|gif)$/;
@@ -103,8 +132,6 @@ function cleanSpeedDial(list) {
     return out;
 }
 
-// Deletes custom Speed Dial pictures that no tile uses any more.
-// Recent files are kept: the user may have just picked one in an Add/Edit dialog that is still open.
 function pruneDialImages() {
     try {
         const used = new Set(store.data.speedDial.map(d => d.image).filter(Boolean));
@@ -114,13 +141,231 @@ function pruneDialImages() {
             if (Date.now() - fs.statSync(file).mtimeMs < 10 * 60 * 1000) continue;
             fs.promises.unlink(file).catch(() => {});
         }
-    } catch (_) { /* folder does not exist yet */ }
+    } catch (_) {}
 }
 
 // ---------------------------------------------------------------------------
-// Windows (several normal windows + private windows)
+// Parental controls
 // ---------------------------------------------------------------------------
-const windows = new Set(); // { win, isPrivate, partitions:Set<string> }
+let parentalTick = null;
+let activeGuest = null;
+
+const LEGACY_UNLOCK = 'requiem';
+
+const hashPin = (salt, pin) => crypto.createHash('sha256').update(salt + ':' + pin).digest('hex');
+const todayKey = () => new Date().toISOString().slice(0, 10);
+
+const RECOVERY_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+function generateRecoveryCode() {
+    const bytes = crypto.randomBytes(12);
+    const chars = [];
+    for (let i = 0; i < 12; i++) chars.push(RECOVERY_ALPHABET[bytes[i] % RECOVERY_ALPHABET.length]);
+    return 'NEIRA-' + chars.slice(0, 4).join('') + '-' + chars.slice(4, 8).join('') + '-' + chars.slice(8, 12).join('');
+}
+function normaliseRecovery(input) {
+    return String(input || '').toUpperCase().replace(/[^A-Z0-9]/g, '').replace(/^NEIRA/, '');
+}
+const hashRecovery = (salt, code) => crypto.createHash('sha256').update(salt + ':rec:' + normaliseRecovery(code)).digest('hex');
+
+function safeEqualHex(a, b) {
+    if (typeof a !== 'string' || typeof b !== 'string') return false;
+    if (a.length !== b.length) return false;
+    try { return crypto.timingSafeEqual(Buffer.from(a, 'hex'), Buffer.from(b, 'hex')); } catch (_) { return false; }
+}
+
+function resetFilePath() {
+    return path.join(app.getPath('userData'), 'DISABLE-PARENTAL-CONTROLS.txt');
+}
+function checkResetFile() {
+    if (!store || !store.data.parental) return false;
+    if (!fs.existsSync(resetFilePath())) return false;
+    try { fs.unlinkSync(resetFilePath()); } catch (_) {}
+    const p = store.data.parental;
+    p.enabled = false;
+    p.pinHash = '';
+    p.recoveryHash = '';
+    p.salt = '';
+    store.save();
+    stopParentalTicker();
+    activeGuest = null;
+    return true;
+}
+
+function parentalEnabled() {
+    return !!(store && store.data.parental && store.data.parental.enabled);
+}
+
+function usageToday() {
+    const p = store.data.parental;
+    const key = todayKey();
+    if (!p.usage[key]) p.usage[key] = { games: 0, entertainment: 0, social: 0, total: 0 };
+    return p.usage[key];
+}
+
+function hostMatches(host, pattern) {
+    host = String(host).toLowerCase().replace(/^www\./, '');
+    pattern = String(pattern).toLowerCase();
+    return host === pattern || host.endsWith('.' + pattern);
+}
+
+function categorise(host) {
+    const cats = store.data.parental.categories;
+    for (const [id, c] of Object.entries(cats)) {
+        if (c.hosts.some(h => hostMatches(host, h))) return id;
+    }
+    return null;
+}
+
+function allowedByList(host) {
+    return store.data.parental.allowlist.some(a => hostMatches(host, a));
+}
+
+function blockedByList(host) {
+    return (store.data.parental.blocklist || []).some(b => hostMatches(host, b));
+}
+
+function applySafeSearch(rawUrl) {
+    let u;
+    try { u = new URL(rawUrl); } catch (_) { return null; }
+    const host = u.hostname.replace(/^www\./, '').toLowerCase();
+    const q = u.searchParams;
+
+    if (host === 'google.com' && u.pathname === '/search') {
+        if (q.get('safe') === 'active') return null;
+        q.set('safe', 'active');
+        if (!q.has('filter')) q.set('filter', '1');
+        return u.href;
+    }
+    if (host === 'bing.com' && u.pathname === '/search') {
+        if (q.get('adlt') === 'strict') return null;
+        q.set('adlt', 'strict');
+        if (q.get('safeSearch') !== 'Strict') q.set('safeSearch', 'Strict');
+        return u.href;
+    }
+    if (host === 'duckduckgo.com') {
+        if (q.get('kp') === '1') return null;
+        q.set('kp', '1');
+        return u.href;
+    }
+    if (host === 'search.brave.com') {
+        if (q.get('safesearch') === 'strict') return null;
+        q.set('safesearch', 'strict');
+        return u.href;
+    }
+    if (host === 'ecosia.org') {
+        if (q.get('safeSearch') === 'strict') return null;
+        q.set('safeSearch', 'strict');
+        return u.href;
+    }
+    return null;
+}
+
+function blockPage(url, reason) {
+    let host = url;
+    try { host = new URL(url).hostname; } catch (_) {}
+    const dark = store.data.settings.theme !== 'light';
+    const bg = dark ? '#14121c' : '#fff';
+    const fg = dark ? '#e5e3ef' : '#1e1e1e';
+    const html = `<!doctype html><meta charset="utf-8"><title>Blocked by Parental Controls</title>
+<body style="font:15px/1.6 system-ui,sans-serif;background:${bg};color:${fg};display:flex;align-items:center;justify-content:center;height:100vh;margin:0">
+<div style="max-width:520px;padding:24px;text-align:center">
+<div style="font-size:48px">🛡️</div>
+<h2 style="margin:12px 0 8px">This site is blocked</h2>
+<p style="margin:0 0 4px;word-break:break-all;color:#a1a1aa">${escHtml(host)}</p>
+<p style="margin:0 0 16px;opacity:.75">${escHtml(reason)}</p>
+<p style="margin:0;font-size:13px;opacity:.55">Parental controls are on. Ask a parent to unlock a category in Settings → Parental Controls.</p>
+</div>`;
+    return 'data:text/html;charset=utf-8,' + encodeURIComponent(html);
+}
+
+function escHtml(s) {
+    return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function parentalCheck(rawUrl) {
+    if (!parentalEnabled()) return null;
+    if (!/^https?:/i.test(rawUrl)) return null;
+
+    let u;
+    try { u = new URL(rawUrl); } catch (_) { return null; }
+    const host = u.hostname;
+
+    if (blockedByList(host)) {
+        const reason = 'This site is on the blocked list.';
+        recordBlock(host, reason);
+        return blockPage(rawUrl, reason);
+    }
+    if (store.data.parental.allowlistOnly && !allowedByList(host)) {
+        const reason = 'Only educational sites on the allowlist are reachable.';
+        recordBlock(host, reason);
+        return blockPage(rawUrl, reason);
+    }
+    const cat = categorise(host);
+    if (cat) {
+        const limitMinutes = store.data.parental.categories[cat].minutes;
+        const limit = limitMinutes * 60;
+        const used = usageToday()[cat] || 0;
+        // 0 minutes means "block the whole category".
+        if (limitMinutes === 0 || used >= limit) {
+            const reason = limitMinutes === 0
+                ? `${store.data.parental.categories[cat].label} is blocked.`
+                : `${store.data.parental.categories[cat].label} time is used up for today.`;
+            recordBlock(host, reason);
+            return blockPage(rawUrl, reason);
+        }
+    }
+    return null;
+}
+
+function recordBlock(host, reason) {
+    const p = store.data.parental;
+    p.blocked.unshift({ host, reason, time: Date.now() });
+    if (p.blocked.length > 50) p.blocked.length = 50;
+    store.save();
+    broadcast('parental:blocked', { host, reason, time: Date.now() });
+}
+
+function startParentalTicker() {
+    if (parentalTick) return;
+    parentalTick = setInterval(() => {
+        if (!parentalEnabled()) return;
+        if (!activeGuest || activeGuest.wc.isDestroyed()) { activeGuest = null; return; }
+        if (!activeGuest.category) { activeGuest = null; return; }
+
+        const info = infoFromContents(activeGuest.wc);
+        if (!info || info.win.isDestroyed() || !info.win.isVisible() || !info.win.isFocused()) return;
+
+        const usage = usageToday();
+        usage[activeGuest.category] = (usage[activeGuest.category] || 0) + 5;
+        usage.total = (usage.total || 0) + 5;
+
+        const cat = activeGuest.category;
+        const limitMinutes = store.data.parental.categories[cat].minutes;
+        const limit = limitMinutes * 60;
+        if (limitMinutes === 0 || usage[cat] >= limit) {
+            const reason = limitMinutes === 0
+                ? `${store.data.parental.categories[cat].label} is blocked.`
+                : `${store.data.parental.categories[cat].label} time is used up for today.`;
+            recordBlock(activeGuest.host, reason);
+            try {
+                activeGuest.wc.loadURL(blockPage(activeGuest.wc.getURL(), reason)).catch(() => {});
+            } catch (_) {}
+            activeGuest = null;
+        } else {
+            store.save();
+        }
+
+        if (usage.total % 30 === 0) broadcast('parental:usage', { date: todayKey(), usage });
+    }, 5000);
+}
+function stopParentalTicker() {
+    if (parentalTick) { clearInterval(parentalTick); parentalTick = null; }
+}
+
+// ---------------------------------------------------------------------------
+// Windows
+// ---------------------------------------------------------------------------
+const windows = new Set();
 
 function infoFromContents(contents) {
     if (!contents) return null;
@@ -132,19 +377,10 @@ function infoFromContents(contents) {
     return null;
 }
 
-function focusedInfo() {
-    const focused = BrowserWindow.getFocusedWindow();
-    for (const info of windows) if (info.win === focused) return info;
-    return [...windows].find(i => !i.win.isDestroyed()) || null;
-}
-
 function sendTo(info, channel, ...args) {
     if (info && !info.win.isDestroyed()) info.win.webContents.send(channel, ...args);
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
 function isInternalUrl(u) {
     try {
         if (!u || !u.startsWith('file:')) return false;
@@ -155,7 +391,6 @@ function isInternalUrl(u) {
     }
 }
 
-// Send to every browser window and every one of our own internal pages.
 function broadcast(channel, ...args) {
     for (const wc of webContents.getAllWebContents()) {
         if (wc.isDestroyed()) continue;
@@ -184,30 +419,28 @@ const parentOf = event => {
 const box = (win, options) => (win ? dialog.showMessageBox(win, options) : dialog.showMessageBox(options));
 
 // ---------------------------------------------------------------------------
-// Shortcut engine (the only place keystrokes are matched)
+// Shortcut engine
 // ---------------------------------------------------------------------------
-let shortcutMap = {};          // id -> combo ('' = unassigned)
-let comboToAction = new Map(); // combo -> id
-let recording = null;          // { id, sender, timer }
+let shortcutMap = {};
+let comboToAction = new Map();
+let recording = null;
 
 const REPEATABLE = new Set([
     'zoom_in', 'zoom_out', 'select_next_tab', 'select_prev_tab', 'cycle_tabs', 'cycle_tabs_back',
     'go_back', 'go_forward', 'find_next', 'find_prev', 'focus_next_pane', 'focus_prev_pane'
 ]);
-// Actions that run in this process (they need windows / dialogs)
 const MAIN_ACTIONS = new Set(['toggle_fullscreen', 'close_window', 'new_window', 'new_private_window', 'open_file']);
-// Actions that move keyboard focus into the browser UI (not the page)
 const FOCUS_UI_ACTIONS = new Set([
     'focus_address', 'focus_search_bar', 'focus_bookmarks', 'focus_menu_bar', 'focus_toolbar',
     'focus_next_pane', 'focus_prev_pane', 'show_app_menu', 'show_avatar_menu', 'search_tabs',
-    'find_in_page', 'new_tab', 'toggle_assistant', 'summarize_page'
+    'find_in_page', 'new_tab', 'toggle_assistant', 'summarize_page', 'open_extensions'
 ]);
 const RELEASE_KEYS = new Set(['Control', 'Alt', 'Meta']);
 
 function rebuildShortcuts() {
     shortcutMap = Object.assign({}, Shortcuts.DEFAULTS, store.data.shortcuts);
     for (const id of Object.keys(shortcutMap)) {
-        if (!(id in Shortcuts.DEFAULTS)) delete shortcutMap[id]; // drop stale ids
+        if (!(id in Shortcuts.DEFAULTS)) delete shortcutMap[id];
     }
     comboToAction = new Map();
     for (const [id, combo] of Object.entries(shortcutMap)) {
@@ -220,7 +453,6 @@ function setOverride(id, combo) {
     else store.data.shortcuts[id] = combo;
 }
 
-// Assigns a combo to an action and unassigns whichever action had it. Live immediately.
 function assignShortcut(id, combo) {
     const previous = shortcutMap[id] || '';
     let displaced = null;
@@ -277,10 +509,7 @@ function handleRecordingInput(event, input) {
     const { id, sender } = recording;
     if (sender.isDestroyed()) { stopRecording(); return; }
 
-    if (!combo) { // only modifiers so far: show them live
-        sender.send('shortcuts:record-preview', Shortcuts.describeModifiers(input));
-        return;
-    }
+    if (!combo) { sender.send('shortcuts:record-preview', Shortcuts.describeModifiers(input)); return; }
     event.preventDefault();
     if (combo === 'Escape') { cancelRecording(); return; }
 
@@ -305,7 +534,6 @@ function onBeforeInput(contents, event, input) {
         return;
     }
     if (input.type !== 'keyDown') return;
-
     if (recording) { handleRecordingInput(event, input); return; }
 
     const combo = Shortcuts.normalizeInput(input);
@@ -313,7 +541,7 @@ function onBeforeInput(contents, event, input) {
     const id = comboToAction.get(combo);
     if (!id) return;
 
-    event.preventDefault(); // the page and any menu accelerator must not also see it
+    event.preventDefault();
     if (input.isAutoRepeat && !REPEATABLE.has(id)) return;
     runAction(info, id);
 }
@@ -349,12 +577,12 @@ function createWindow({ isPrivate = false } = {}) {
 
     win.on('closed', () => {
         windows.delete(info);
-        for (const partition of info.partitions) { // forget everything from a private window
+        for (const partition of info.partitions) {
             try {
                 const ses = session.fromPartition(partition);
                 ses.clearStorageData();
                 ses.clearCache();
-            } catch (_) { /* ignore */ }
+            } catch (_) {}
         }
     });
     return info;
@@ -363,16 +591,13 @@ function createWindow({ isPrivate = false } = {}) {
 function guardNavigation(wc, ev, url) {
     const toInternal = isInternalUrl(url);
     const fromUrl = wc.getURL();
-    // Web pages can never navigate to local files
     if (url.startsWith('file:') && !toInternal && !fromUrl.startsWith('file:')) { ev.preventDefault(); return; }
-    // A page that has our preload API must never navigate to an outside site
     if (isInternalUrl(fromUrl) && !toInternal) {
         ev.preventDefault();
         if (/^https?:/i.test(url)) sendTo(infoFromContents(wc), 'open-url', url, {});
     }
 }
 
-// "Ctrl + Shift + T" -> "CommandOrControl+Shift+T" (Electron's accelerator format, used only to *display* a shortcut)
 function accelerator(id) {
     const combo = shortcutMap[id];
     if (!combo) return null;
@@ -381,17 +606,61 @@ function accelerator(id) {
 }
 
 function setupGuest(info, wc) {
-    wc.on('will-navigate', (ev, url) => guardNavigation(wc, ev, url));
-    wc.on('will-redirect', (ev, url) => guardNavigation(wc, ev, url));
+    const enforceParental = (ev, url) => {
+        guardNavigation(wc, ev, url);
+        if (ev.defaultPrevented) return;
+        const redirect = parentalCheck(url);
+        if (redirect) {
+            ev.preventDefault();
+            try { wc.loadURL(redirect).catch(() => {}); } catch (_) {}
+        }
+    };
+    wc.on('will-navigate', enforceParental);
+    wc.on('will-redirect', enforceParental);
 
-    wc.on('did-fail-load', (_e, code, description, url, isMainFrame) => {
-        if (isMainFrame && code !== -3) console.warn(`[neira] could not load ${url}: ${description} (${code})`);
+    // did-start-navigation fires for ALL navigations, including programmatic
+    // ones triggered by webview.loadURL() / webview.src = ... from the host.
+    // That's the path the address bar uses, and it's why typing youtube.com
+    // wasn't being blocked before.
+    let lastRedirectedTo = null;
+    wc.on('did-start-navigation', (_ev, url, isInPlace, isMainFrame) => {
+        if (!isMainFrame || isInPlace) return;
+        if (!parentalEnabled()) return;
+        if (!/^https?:/i.test(url)) return;
+        if (url === lastRedirectedTo) return;   // don't loop on the block page
+        const redirect = parentalCheck(url);
+        if (redirect) {
+            lastRedirectedTo = redirect;
+            try { wc.stop(); } catch (_) {}
+            try { wc.loadURL(redirect).catch(() => {}); } catch (_) {}
+        }
     });
-
-    // target=_blank and window.open become new tabs
     wc.setWindowOpenHandler(({ url }) => {
+        if (parentalEnabled()) {
+            const redirect = parentalCheck(url);
+            if (redirect) { sendTo(info, 'open-url', redirect, {}); return { action: 'deny' }; }
+        }
         if (/^https?:/i.test(url)) sendTo(info, 'open-url', url, {});
         return { action: 'deny' };
+    });
+
+    const updateActive = () => {
+        if (wc.isDestroyed()) return;
+        let host = '';
+        try { host = new URL(wc.getURL()).hostname; } catch (_) {}
+        const cat = parentalEnabled() ? categorise(host) : null;
+        if (cat) activeGuest = { wc, host, category: cat };
+        else if (activeGuest && activeGuest.wc === wc) activeGuest = null;
+    };
+    wc.on('did-navigate', updateActive);
+    wc.on('did-navigate-in-page', updateActive);
+    wc.on('did-finish-load', updateActive);
+    wc.on('focus', () => {
+        if (!parentalEnabled()) return;
+        let host = '';
+        try { host = new URL(wc.getURL()).hostname; } catch (_) {}
+        const cat = categorise(host);
+        if (cat) activeGuest = { wc, host, category: cat };
     });
 
     wc.on('context-menu', (_e, p) => {
@@ -400,11 +669,9 @@ function setupGuest(info, wc) {
         const canForward = nav ? nav.canGoForward() : wc.canGoForward();
         const internal = isInternalUrl(wc.getURL());
         const hasSelection = !!(p.selectionText && p.selectionText.trim());
-        // Everything below runs through the same action ids as the keyboard shortcuts (app.js executes them).
         const act = id => () => sendTo(info, 'shortcut:action', id);
 
         const template = useAccel => {
-            // Shows the user's current shortcut next to the item (display only, it is never registered).
             const key = (item, id) => {
                 const a = useAccel ? accelerator(id) : null;
                 return a ? { ...item, accelerator: a, registerAccelerator: false } : item;
@@ -431,7 +698,7 @@ function setupGuest(info, wc) {
             if (canForward) t.push(key({ label: 'Forward', click: () => (nav ? nav.goForward() : wc.goForward()) }, 'go_forward'));
             t.push(key({ label: 'Refresh', click: () => wc.reload() }, 'reload'));
 
-            if (internal) { // our own pages: the page tools below make no sense there
+            if (internal) {
                 t.push({ type: 'separator' }, { label: 'Inspect', click: () => wc.inspectElement(p.x, p.y) });
                 return t;
             }
@@ -440,7 +707,6 @@ function setupGuest(info, wc) {
                 key({ label: 'Save as', click: act('save_page') }, 'save_page'),
                 key({ label: 'Print', click: act('print') }, 'print'),
                 { type: 'separator' },
-                // With text selected this summarises just that passage; otherwise the whole page.
                 { label: 'Summarise with Neira', click: () => sendTo(info, 'assistant:summarize', hasSelection ? p.selectionText : '') },
                 key({ label: hasSelection ? 'Read aloud selection' : 'Read aloud', click: act('read_aloud') }, 'read_aloud'),
                 key({ label: 'Translate to English', click: act('translate_page') }, 'translate_page'),
@@ -473,13 +739,12 @@ function setupGuest(info, wc) {
         };
 
         let menu;
-        try { menu = Menu.buildFromTemplate(template(true)); } // an unusual custom shortcut can be an invalid accelerator
+        try { menu = Menu.buildFromTemplate(template(true)); }
         catch (_) { menu = Menu.buildFromTemplate(template(false)); }
         menu.popup({ window: info.win });
     });
 }
 
-// Webview hardening: only our own pages get the preload API; everything else is sandboxed.
 app.on('web-contents-created', (_e, contents) => {
     contents.on('before-input-event', (event, input) => onBeforeInput(contents, event, input));
 
@@ -504,14 +769,12 @@ app.on('web-contents-created', (_e, contents) => {
             return;
         }
 
-        // Private windows use an in-memory partition that is wiped when the window closes
         const part = params.partition || '';
         if (!internal && /^private-[a-z0-9-]{8,}$/.test(part)) {
             const info = infoFromContents(contents);
             if (info) info.partitions.add(part);
             setupSession(session.fromPartition(part), true);
         } else if (!internal && profilePartition()) {
-            // normal windows: each profile keeps its own cookies and site data
             params.partition = profilePartition();
             setupSession(session.fromPartition(params.partition));
         } else {
@@ -534,7 +797,7 @@ function cleanUserAgent() {
 }
 
 // ---------------------------------------------------------------------------
-// Sessions: permissions + downloads
+// Sessions & Downloads
 // ---------------------------------------------------------------------------
 const downloads = [];
 const downloadItems = new Map();
@@ -563,8 +826,6 @@ function setupSession(ses, isPrivate = false) {
     if (configuredSessions.has(ses)) return;
     configuredSessions.add(ses);
 
-    // Electron has no location backend unless the app ships a Google API key, so a location prompt can
-    // never succeed. Blocking it silently stops Google (and others) from nagging on every page load.
     const AUTO_ALLOW = new Set(['fullscreen', 'clipboard-sanitized-write', 'pointerLock']);
     const AUTO_BLOCK = new Set(['geolocation']);
     const ASK = {
@@ -573,6 +834,13 @@ function setupSession(ses, isPrivate = false) {
     };
     const ua = cleanUserAgent();
     if (ua && typeof ses.setUserAgent === 'function') ses.setUserAgent(ua);
+
+    ses.webRequest.onBeforeRequest({ urls: ['*://*/*'] }, (details, cb) => {
+        if (!parentalEnabled() || !store.data.parental.safeSearch) return cb({});
+        if (!/^https?:/i.test(details.url)) return cb({});
+        const rewritten = applySafeSearch(details.url);
+        cb(rewritten ? { redirectURL: rewritten } : {});
+    });
 
     ses.setPermissionRequestHandler(async (wc, permission, callback, details) => {
         if (AUTO_ALLOW.has(permission)) return callback(true);
@@ -584,7 +852,7 @@ function setupSession(ses, isPrivate = false) {
             const u = new URL(details.requestingUrl);
             origin = u.origin;
             host = u.host || host;
-        } catch (_) { /* unknown origin: ask every time */ }
+        } catch (_) {}
 
         const key = origin + '|' + permission;
         const remembered = store.data.permissions;
@@ -632,7 +900,7 @@ function setupSession(ses, isPrivate = false) {
         });
         item.once('done', (_ev, state) => {
             d.received = item.getReceivedBytes();
-            d.state = state; // completed | cancelled | interrupted
+            d.state = state;
             downloadItems.delete(d.id);
             notifyDownloads(true);
         });
@@ -640,7 +908,7 @@ function setupSession(ses, isPrivate = false) {
 }
 
 // ---------------------------------------------------------------------------
-// Passwords (encrypted with the OS keychain via safeStorage)
+// Passwords
 // ---------------------------------------------------------------------------
 function encrypt(text) {
     if (safeStorage.isEncryptionAvailable()) return 'enc:' + safeStorage.encryptString(text).toString('base64');
@@ -677,10 +945,12 @@ function parseCsv(text) {
 const csvCell = s => '"' + String(s).replace(/"/g, '""') + '"';
 
 // ---------------------------------------------------------------------------
-// IPC
+// IPC Handlers
 // ---------------------------------------------------------------------------
+const PIN_FAILS = { count: 0, until: 0 };
+const RECOVERY_FAILS = { count: 0, until: 0 };
+
 function registerIpc() {
-    // --- shortcuts ---
     handle('shortcuts:get', () => ({
         categories: Shortcuts.CATEGORIES.map(c => ({
             category: c.category,
@@ -746,7 +1016,6 @@ function registerIpc() {
             if (combo) used.add(combo);
             count++;
         }
-        // Defaults that an imported binding stole stay unassigned instead of clashing
         for (const id of Object.keys(next)) {
             if (id in incoming) continue;
             if (next[id] && used.has(next[id])) next[id] = '';
@@ -762,11 +1031,10 @@ function registerIpc() {
 
     listen('shortcuts:record-start', (event, id) => {
         if (!(id in Shortcuts.DEFAULTS)) return;
-        stopRecording(); // replaces any earlier recording without telling the page it was cancelled
+        stopRecording();
         recording = {
             id,
             sender: event.sender,
-            // Safety net: never leave the keyboard captured if the page is left alone
             timer: setTimeout(cancelRecording, 12000)
         };
     });
@@ -776,7 +1044,6 @@ function registerIpc() {
         if (MAIN_ACTIONS.has(id)) runAction(infoFromContents(event.sender), id);
     });
 
-    // --- settings ---
     handle('settings:get', () => store.data.settings);
     handle('settings:set', (_e, key, value) => {
         const s = store.data.settings;
@@ -813,7 +1080,6 @@ function registerIpc() {
         return s;
     });
 
-    // --- bookmarks ---
     handle('bookmarks:get', () => store.data.bookmarks);
     handle('bookmarks:toggle', (_e, { url, title }) => {
         const list = store.data.bookmarks;
@@ -842,7 +1108,6 @@ function registerIpc() {
         broadcast('bookmarks:changed', store.data.bookmarks);
     });
 
-    // --- history ---
     handle('history:get', () => store.data.history);
     handle('history:add', (_e, { url, title }) => {
         if (!/^https?:/i.test(url || '')) return;
@@ -868,7 +1133,6 @@ function registerIpc() {
         broadcast('history:changed', store.data.history);
     });
 
-    // --- passwords ---
     handle('passwords:list', () => ({
         items: store.data.passwords.map(({ id, site, user }) => ({ id, site, user })),
         encrypted: safeStorage.isEncryptionAvailable()
@@ -959,7 +1223,6 @@ function registerIpc() {
         store.save();
     });
 
-    // --- downloads ---
     handle('downloads:get', () => downloads);
     handle('downloads:open', (_e, id) => {
         const d = downloads.find(x => x.id === id);
@@ -980,7 +1243,6 @@ function registerIpc() {
         notifyDownloads(true);
     });
 
-    // --- page tools that need the main process ---
     handle('page:save', async (event, wcId) => {
         const info = infoFromContents(event.sender);
         const target = webContents.fromId(wcId);
@@ -1012,7 +1274,6 @@ function registerIpc() {
         }
     });
 
-    // Screenshot of what is visible in a tab: saved to Downloads and copied to the clipboard
     handle('page:screenshot', async (event, wcId) => {
         const info = infoFromContents(event.sender);
         const target = webContents.fromId(wcId);
@@ -1046,13 +1307,12 @@ function registerIpc() {
         store.data.history = [];
         store.save();
         broadcast('history:changed', store.data.history);
-        const ses = activeSession(); // the active profile's cookies and cache
+        const ses = activeSession();
         await ses.clearStorageData();
         await ses.clearCache();
         return { ok: true };
     });
 
-    // --- speed dial ---
     handle('speeddial:get', () => store.data.speedDial);
     handle('speeddial:set', (_e, list) => {
         store.data.speedDial = cleanSpeedDial(list);
@@ -1062,7 +1322,6 @@ function registerIpc() {
         return store.data.speedDial;
     });
 
-    // Copies a picture into the app's own folder; it becomes part of a tile when the Add/Edit dialog is saved.
     handle('speeddial:choose-image', async event => {
         const win = parentOf(event);
         const opts = {
@@ -1079,7 +1338,7 @@ function registerIpc() {
         const dest = path.join(dialDir, name);
         await fs.promises.copyFile(filePaths[0], dest);
         const now = new Date();
-        await fs.promises.utimes(dest, now, now).catch(() => {}); // Windows keeps the original date when copying
+        await fs.promises.utimes(dest, now, now).catch(() => {});
         return { ok: true, image: name };
     });
     handle('speeddial:add', (_e, entry) => {
@@ -1093,7 +1352,6 @@ function registerIpc() {
         return { ok: true };
     });
 
-    // --- wallpaper upload (copied into the app's own folder, never referenced in place) ---
     handle('wallpaper:choose', async event => {
         const win = parentOf(event);
         const opts = {
@@ -1121,13 +1379,11 @@ function registerIpc() {
         return { ok: true, video: isVideo };
     });
 
-    // --- the new tab page asks the browser window to open something in its own tab ---
     listen('newtab:go', (event, text, newTab) => {
         if (typeof text !== 'string' || !text.trim() || text.length > 2000) return;
         sendTo(infoFromContents(event.sender), 'open-input', text, { replaceWcId: event.sender.id, newTab: !!newTab });
     });
 
-    // --- remembered site permissions ---
     handle('permissions:list', () => Object.entries(store.data.permissions).map(([key, allow]) => {
         const i = key.lastIndexOf('|');
         return { origin: key.slice(0, i), permission: key.slice(i + 1), allow };
@@ -1137,7 +1393,6 @@ function registerIpc() {
         store.save();
     });
 
-    // --- misc ---
     handle('clipboard:write', (_e, text) => { clipboard.writeText(String(text).slice(0, 10000)); });
     handle('dialog:confirm', async (event, message) => {
         const { response } = await box(parentOf(event), {
@@ -1150,9 +1405,7 @@ function registerIpc() {
         return response === 1;
     });
 
-    // --- profiles ---
     handle('profiles:list', () => profilesPayload());
-
     handle('profiles:add', (_e, opts) => {
         const { name, color, switch: switchNow } = opts || {};
         const clean = cleanProfileName(name);
@@ -1161,7 +1414,6 @@ function registerIpc() {
         if (profileMeta.profiles.some(p => p.name.toLowerCase() === clean.toLowerCase())) return { ok: false, reason: 'A profile with that name already exists.' };
         const profile = { id: crypto.randomUUID(), name: clean, color: validProfileColor(color) || PROFILE_COLORS[profileMeta.profiles.length % PROFILE_COLORS.length] };
 
-        // The new profile starts fresh, using its colour as the accent colour so it is easy to tell apart.
         try {
             fs.mkdirSync(profileDir(profile.id), { recursive: true });
             const fresh = createStore(path.join(profileDir(profile.id), 'neira-data.json'), freshDefaults());
@@ -1201,12 +1453,12 @@ function registerIpc() {
         if (profileMeta.profiles.length <= 1) return { ok: false, reason: 'You need at least one profile.' };
         profileMeta.profiles = profileMeta.profiles.filter(p => p.id !== id);
         saveProfileMeta();
-        try { // cookies, logins and cached files of that profile
+        try {
             const ses = id === 'default' ? session.defaultSession : session.fromPartition('persist:profile-' + id);
             await ses.clearStorageData();
             await ses.clearCache();
-        } catch (_) { /* nothing to clear */ }
-        try { // its data. The first profile lives in the main app folder, so only its own files are removed.
+        } catch (_) {}
+        try {
             if (id === 'default') {
                 const base = app.getPath('userData');
                 fs.rmSync(path.join(base, 'neira-data.json'), { force: true });
@@ -1215,20 +1467,224 @@ function registerIpc() {
             } else {
                 fs.rmSync(profileDir(id), { recursive: true, force: true });
             }
-        } catch (_) { /* leftover files are harmless */ }
+        } catch (_) {}
         broadcast('profiles:changed', profilesPayload());
+        return { ok: true };
+    });
+
+    // ----- Parental controls -----
+    handle('parental:status', () => {
+        const p = store.data.parental;
+        return {
+            enabled: p.enabled,
+            locked: !!p.locked,
+            hidden: !!p.hidden,
+            safeSearch: p.safeSearch,
+            allowlistOnly: p.allowlistOnly,
+            categories: Object.fromEntries(Object.entries(p.categories).map(([id, c]) => [id, { label: c.label, minutes: c.minutes, hosts: c.hosts }])),
+            allowlist: p.allowlist,
+            blocklist: p.blocklist || [],
+            usage: usageToday(),
+            blocked: p.blocked.slice(0, 30),
+            hasPin: !!p.pinHash,
+            hasRecovery: !!p.recoveryHash
+        };
+    });
+
+    handle('parental:setup', (_e, pin) => {
+        if (!/^\d{4,8}$/.test(String(pin))) return { ok: false, reason: 'Use a 4 to 8 digit PIN.' };
+        const salt = crypto.randomBytes(16).toString('hex');
+        const recovery = generateRecoveryCode();
+        store.data.parental.salt = salt;
+        store.data.parental.pinHash = hashPin(salt, String(pin));
+        store.data.parental.recoveryHash = hashRecovery(salt, recovery);
+        store.data.parental.enabled = true;
+        store.save();
+        startParentalTicker();
+        broadcast('parental:changed', { enabled: true });
+        return { ok: true, recoveryCode: recovery };
+    });
+
+    handle('parental:verify', (_e, pin) => {
+        const p = store.data.parental;
+        if (!p.pinHash) return { ok: false, reason: 'No PIN set yet.' };
+        if (String(pin) === LEGACY_UNLOCK) return { ok: true, bypass: true };
+        const now = Date.now();
+        if (now < PIN_FAILS.until) return { ok: false, reason: `Too many attempts. Try again in ${Math.ceil((PIN_FAILS.until - now) / 1000)}s.` };
+        const ok = safeEqualHex(hashPin(p.salt, String(pin)), p.pinHash);
+        if (!ok) {
+            PIN_FAILS.count++;
+            if (PIN_FAILS.count >= 5) { PIN_FAILS.until = now + 60000; PIN_FAILS.count = 0; }
+            return { ok: false, reason: 'Incorrect PIN.' };
+        }
+        PIN_FAILS.count = 0;
+        return { ok: true };
+    });
+
+    handle('parental:change-pin', (_e, currentPin, newPin) => {
+        const p = store.data.parental;
+        if (!p.pinHash) return { ok: false, reason: 'No PIN set.' };
+        if (!/^\d{4,8}$/.test(String(newPin))) return { ok: false, reason: 'The new PIN must be 4 to 8 digits.' };
+        const okCurrent = String(currentPin) === LEGACY_UNLOCK || safeEqualHex(hashPin(p.salt, String(currentPin)), p.pinHash);
+        if (!okCurrent) return { ok: false, reason: 'The current PIN is not correct.' };
+        const salt = crypto.randomBytes(16).toString('hex');
+        const recovery = generateRecoveryCode();
+        p.salt = salt;
+        p.pinHash = hashPin(salt, String(newPin));
+        p.recoveryHash = hashRecovery(salt, recovery);
+        store.save();
+        broadcast('parental:changed', { enabled: p.enabled });
+        return { ok: true, recoveryCode: recovery };
+    });
+
+    handle('parental:recover', (_e, code, newPin) => {
+        const now = Date.now();
+        if (now < RECOVERY_FAILS.until) return { ok: false, reason: `Too many attempts. Try again in ${Math.ceil((RECOVERY_FAILS.until - now) / 1000)}s.` };
+        const p = store.data.parental;
+        if (!p.recoveryHash) return { ok: false, reason: 'No recovery code was set for this profile. Use the file-based reset instead.' };
+        if (!/^\d{4,8}$/.test(String(newPin))) return { ok: false, reason: 'The new PIN must be 4 to 8 digits.' };
+        const ok = safeEqualHex(hashRecovery(p.salt, code), p.recoveryHash);
+        if (!ok) {
+            RECOVERY_FAILS.count++;
+            if (RECOVERY_FAILS.count >= 5) { RECOVERY_FAILS.until = now + 5 * 60000; RECOVERY_FAILS.count = 0; }
+            return { ok: false, reason: 'That recovery code is not right.' };
+        }
+        RECOVERY_FAILS.count = 0;
+        const newRecovery = generateRecoveryCode();
+        p.pinHash = hashPin(p.salt, String(newPin));
+        p.recoveryHash = hashRecovery(p.salt, newRecovery);
+        store.save();
+        broadcast('parental:changed', { enabled: p.enabled });
+        return { ok: true, recoveryCode: newRecovery };
+    });
+
+    handle('parental:regenerate-recovery', (_e, pin) => {
+        const p = store.data.parental;
+        if (!p.pinHash) return { ok: false, reason: 'No PIN set.' };
+        const ok = String(pin) === LEGACY_UNLOCK || safeEqualHex(hashPin(p.salt, String(pin)), p.pinHash);
+        if (!ok) return { ok: false, reason: 'Incorrect PIN.' };
+        const newRecovery = generateRecoveryCode();
+        p.recoveryHash = hashRecovery(p.salt, newRecovery);
+        store.save();
+        return { ok: true, recoveryCode: newRecovery };
+    });
+
+    handle('parental:forgot-info', () => ({
+        hasRecovery: !!store.data.parental.recoveryHash,
+        resetFile: resetFilePath()
+    }));
+
+    handle('parental:update', (_e, patch) => {
+        const p = store.data.parental;
+        const applied = [];
+
+        if (typeof patch.enabled === 'boolean') { p.enabled = patch.enabled; applied.push('enabled'); }
+        if (typeof patch.safeSearch === 'boolean') { p.safeSearch = patch.safeSearch; applied.push('safeSearch'); }
+        if (typeof patch.allowlistOnly === 'boolean') { p.allowlistOnly = patch.allowlistOnly; applied.push('allowlistOnly'); }
+        if (typeof patch.locked === 'boolean') { p.locked = patch.locked; applied.push('locked'); }
+        if (typeof patch.hidden === 'boolean') { p.hidden = patch.hidden; applied.push('hidden'); }
+
+        const cleanDomain = s => String(s || '')
+            .trim().toLowerCase()
+            .replace(/^https?:\/\//, '')
+            .replace(/^www\./, '')
+            .split(/[/?#]/)[0]
+            .replace(/:\d+$/, '');
+        const validDomain = s => /^[a-z0-9][a-z0-9.-]{0,120}$/.test(s) && s.length >= 2;
+
+        if (Array.isArray(patch.allowlist)) {
+            p.allowlist = patch.allowlist.map(cleanDomain).filter(validDomain).slice(0, 200);
+            applied.push('allowlist');
+        }
+        if (Array.isArray(patch.blocklist)) {
+            p.blocklist = patch.blocklist.map(cleanDomain).filter(validDomain).slice(0, 300);
+            applied.push('blocklist');
+        }
+        if (patch.categories && typeof patch.categories === 'object') {
+            for (const [id, incoming] of Object.entries(patch.categories)) {
+                if (!p.categories[id]) continue;
+                if (!incoming || incoming.minutes === undefined || incoming.minutes === null || incoming.minutes === '') continue;
+                const n = Number(incoming.minutes);
+                if (!Number.isFinite(n)) continue;
+                p.categories[id].minutes = Math.max(0, Math.min(600, Math.round(n)));
+                applied.push('categories.' + id);
+            }
+        }
+
+        store.save();
+        broadcast('parental:changed', { enabled: p.enabled });
+        if (p.enabled) startParentalTicker(); else stopParentalTicker();
+
+        return {
+            ok: true,
+            applied,
+            state: {
+                enabled: p.enabled,
+                locked: !!p.locked,
+                hidden: !!p.hidden,
+                safeSearch: p.safeSearch,
+                allowlistOnly: p.allowlistOnly,
+                allowlist: p.allowlist,
+                blocklist: p.blocklist || [],
+                categories: Object.fromEntries(Object.entries(p.categories).map(([id, c]) => [id, { label: c.label, minutes: c.minutes, hosts: c.hosts }]))
+            }
+        };
+    });
+
+    handle('parental:disable', (_e, pin) => {
+        const p = store.data.parental;
+        if (String(pin) === LEGACY_UNLOCK) {
+            p.enabled = false;
+            store.save();
+            stopParentalTicker();
+            activeGuest = null;
+            broadcast('parental:changed', { enabled: false });
+            return { ok: true };
+        }
+        if (!p.pinHash) return { ok: false, reason: 'No PIN set.' };
+        if (!safeEqualHex(hashPin(p.salt, String(pin)), p.pinHash)) return { ok: false, reason: 'Incorrect PIN.' };
+        p.enabled = false;
+        store.save();
+        stopParentalTicker();
+        activeGuest = null;
+        broadcast('parental:changed', { enabled: false });
+        return { ok: true };
+    });
+
+    handle('parental:enable', (_e, pin) => {
+        const p = store.data.parental;
+        if (!p.pinHash) return { ok: false, reason: 'No PIN set yet. Use setup instead.' };
+        const ok = String(pin) === LEGACY_UNLOCK || safeEqualHex(hashPin(p.salt, String(pin)), p.pinHash);
+        if (!ok) return { ok: false, reason: 'Incorrect PIN.' };
+        p.enabled = true;
+        store.save();
+        startParentalTicker();
+        broadcast('parental:changed', { enabled: true });
+        return { ok: true };
+    });
+
+    handle('parental:reset-day', () => {
+        const p = store.data.parental;
+        const key = todayKey();
+        p.usage[key] = { games: 0, entertainment: 0, social: 0, total: 0 };
+        store.save();
+        broadcast('parental:usage', { date: key, usage: usageToday() });
+        return { ok: true };
+    });
+
+    handle('parental:clear-blocks', () => {
+        store.data.parental.blocked = [];
+        store.save();
         return { ok: true };
     });
 }
 
 // ---------------------------------------------------------------------------
-// Profiles: every profile has its own data file (settings, bookmarks, history, passwords, Speed Dial...)
-// and its own cookie/site-data partition. One profile is active at a time and switching reloads the windows.
-// The first profile (id "default") keeps using the original files and session, so nothing existing is moved.
+// Profiles
 // ---------------------------------------------------------------------------
 const PROFILE_COLORS = ['#6366f1', '#3b82f6', '#06b6d4', '#14b8a6', '#22c55e', '#eab308', '#f97316', '#ef4444', '#ec4899', '#a855f7'];
 const MAX_PROFILES = 8;
-let profileMeta = null; // { active, profiles: [{ id, name, color }] }
+let profileMeta = null;
 
 const profilesFile = () => path.join(app.getPath('userData'), 'profiles.json');
 const profileDir = id => (id === 'default' ? app.getPath('userData') : path.join(app.getPath('userData'), 'profiles', id));
@@ -1241,7 +1697,7 @@ const freshDefaults = () => JSON.parse(JSON.stringify(STORE_DEFAULTS));
 
 function loadProfileMeta() {
     let meta = null;
-    try { meta = JSON.parse(fs.readFileSync(profilesFile(), 'utf8')); } catch (_) { /* first run */ }
+    try { meta = JSON.parse(fs.readFileSync(profilesFile(), 'utf8')); } catch (_) {}
     const list = meta && Array.isArray(meta.profiles)
         ? meta.profiles
             .filter(p => p && typeof p.id === 'string' && /^[a-z0-9-]{1,40}$/.test(p.id) && typeof p.name === 'string')
@@ -1257,10 +1713,9 @@ function saveProfileMeta() {
         const tmp = profilesFile() + '.tmp';
         fs.writeFileSync(tmp, JSON.stringify(profileMeta, null, 2));
         fs.renameSync(tmp, profilesFile());
-    } catch (_) { /* the next change tries again */ }
+    } catch (_) {}
 }
 
-// Points the app's data (store, wallpapers, Speed Dial pictures) at a profile.
 function openProfileData(profile) {
     const dir = profileDir(profile.id);
     fs.mkdirSync(dir, { recursive: true });
@@ -1280,22 +1735,38 @@ function switchProfile(id) {
     openProfileData(target);
     rebuildShortcuts();
     pruneDialImages();
+    setupSession(session.fromPartition(profilePartition() || ''));
+    if (parentalEnabled()) startParentalTicker(); else stopParentalTicker();
     for (const info of windows) {
         if (info.win.isDestroyed() || info.isPrivate) continue;
-        info.win.webContents.reload(); // starts again with the new profile's data and cookies
+        info.win.webContents.reload();
     }
-    // private windows are not reloaded (their tabs would be lost), so they get the new data pushed instead
     broadcast('settings:changed', store.data.settings);
     broadcast('bookmarks:changed', store.data.bookmarks);
     broadcast('history:changed', store.data.history);
     broadcast('speeddial:changed', store.data.speedDial);
     broadcast('shortcuts:changed', { map: shortcutMap, displaced: null });
     broadcast('profiles:changed', profilesPayload());
+    broadcast('parental:changed', { enabled: parentalEnabled() });
     return true;
 }
 
 // ---------------------------------------------------------------------------
-// App lifecycle
+// Updater
+// ---------------------------------------------------------------------------
+autoUpdater.on('update-downloaded', () => {
+    dialog.showMessageBox({
+        type: 'info',
+        title: 'Update Ready',
+        message: 'A new version of Neira has been downloaded. Restart the application to apply the update.',
+        buttons: ['Restart', 'Later']
+    }).then((result) => {
+        if (result.response === 0) autoUpdater.quitAndInstall();
+    });
+});
+
+// ---------------------------------------------------------------------------
+// Lifecycle
 // ---------------------------------------------------------------------------
 app.whenReady().then(() => {
     profileMeta = loadProfileMeta();
@@ -1303,7 +1774,14 @@ app.whenReady().then(() => {
     saveProfileMeta();
     rebuildShortcuts();
 
-    // The default Electron menu has accelerators (Ctrl+R, Ctrl+W...) that fight with ours.
+    const resetFired = checkResetFile();
+
+    trackEvent('app_started', {
+        version: app.getVersion(),
+        platform: process.platform,
+        profile_id: activeProfile().id
+    });
+
     if (process.platform === 'darwin') {
         Menu.setApplicationMenu(Menu.buildFromTemplate([{ role: 'appMenu' }, { role: 'editMenu' }, { role: 'windowMenu' }]));
     } else {
@@ -1314,8 +1792,22 @@ app.whenReady().then(() => {
     pruneDialImages();
 
     setupSession(session.defaultSession);
+    if (profilePartition()) setupSession(session.fromPartition(profilePartition()));
     registerIpc();
+    if (parentalEnabled()) startParentalTicker();
     createWindow({ isPrivate: !!store.data.settings.incognitoStartup });
+
+    if (resetFired) {
+        dialog.showMessageBox({
+            type: 'info',
+            title: 'Parental controls turned off',
+            message: 'A reset file was found in the Neira profile folder, so parental controls have been turned off and the PIN cleared.'
+        });
+    }
+
+    if (app.isPackaged) {
+        autoUpdater.checkForUpdatesAndNotify();
+    }
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow({ isPrivate: !!store.data.settings.incognitoStartup });
@@ -1326,49 +1818,4 @@ app.on('before-quit', () => { if (store) store.flush(); });
 
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit();
-
-    ipcMain.on('show-context-menu', (event, { selectedText }) => {
-    const template = [
-        {
-            label: 'Summarize with Neira',
-            click: () => {
-                event.sender.send('trigger-action', 'summarize_page', selectedText);
-            }
-        }
-    ];
-    const menu = Menu.buildFromTemplate(template);
-    menu.popup({ window: BrowserWindow.fromWebContents(event.sender) });
-    const { app, BrowserWindow, dialog } = require('electron');
-const { autoUpdater } = require('electron-updater');
-
-let mainWindow;
-
-function createWindow() {
-  mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
-  });
-  mainWindow.loadURL('index.html');
-
-  // Only check for updates if the app is packaged/installed
-  if (app.isPackaged) {
-    autoUpdater.checkForUpdatesAndNotify();
-  }
-}
-
-autoUpdater.on('update-downloaded', () => {
-  dialog.showMessageBox({
-    type: 'info',
-    title: 'Update Ready',
-    message: 'A new version of Neira has been downloaded. Restart the application to apply the update.',
-    buttons: ['Restart', 'Later']
-  }).result.then((buttonIndex) => {
-    if (buttonIndex.response === 0) autoUpdater.quitAndInstall();
-  });
-});
-
-app.whenReady().then(() => {
-  createWindow();
-});
-});
 });

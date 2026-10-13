@@ -476,7 +476,6 @@
         loadInTab(tab, url);
         if (tab.id === activeId) urlInput.blur();
     }
-
     // The new tab page asks us to open a URL or search; its own tab becomes the result.
     function openFromPage(text, opts) {
         const url = resolveInput(text);

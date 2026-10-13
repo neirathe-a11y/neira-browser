@@ -8,7 +8,6 @@
     <script src="boot.js"></script>
     <style>
         :root {
-            /* base surface colours; the accent can tint them (--tint is set by boot.js: 0% / 7% / 15%) */
             --base-main: #0a0b0e;
             --base-sidebar: #0f1016;
             --base-card: #151722;
@@ -66,7 +65,6 @@
             transition: background-color 0.2s ease, color 0.2s ease;
         }
 
-        /* Sidebar */
         .sidebar {
             width: 240px;
             background-color: var(--sidebar-bg);
@@ -91,7 +89,6 @@
         .nav-badge { font-size: 11px; padding: 1px 7px; border-radius: 10px; background: var(--accent-soft); color: var(--accent); }
         .nav-item.active .nav-badge { background: rgba(255,255,255,0.22); color: var(--on-accent); }
 
-        /* Content */
         .content { flex: 1; padding: 40px 60px 80px; overflow-y: auto; scroll-behavior: smooth; }
         @media (prefers-reduced-motion: reduce) { .content { scroll-behavior: auto; } }
         .page-section { display: none; max-width: 820px; }
@@ -100,7 +97,6 @@
         .section-sub { font-size: 14px; color: var(--text-secondary); margin-bottom: 24px; line-height: 1.5; }
         .sub-header { font-size: 16px; font-weight: 600; margin: 28px 0 12px; }
 
-        /* Cards + settings rows */
         .setting-card {
             background-color: var(--card-bg); border: 1px solid var(--card-border); border-radius: 12px;
             padding: var(--padding-card); margin-bottom: var(--gap-list);
@@ -128,7 +124,7 @@
         input:checked + .slider:before { transform: translateX(20px); }
         input:focus-visible + .slider { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-        select, input[type="text"], input[type="password"], input[type="url"], input[type="search"] {
+        select, input[type="text"], input[type="password"], input[type="url"], input[type="search"], input[type="number"] {
             background: var(--input-bg); border: 1px solid var(--border-color); color: var(--text-primary);
             padding: 9px 12px; border-radius: 8px; outline: none; font-size: 13px; min-width: 0;
         }
@@ -146,7 +142,6 @@
         .btn-danger:hover { background: rgba(239, 68, 68, 0.12); border-color: var(--danger); }
         .btn-small { padding: 5px 12px; font-size: 12px; }
 
-        /* Lists (history, bookmarks, downloads, passwords) */
         .tools { display: flex; gap: 10px; margin-bottom: 16px; }
         .tools input { flex: 1; }
         .list { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 12px; overflow: hidden; }
@@ -174,7 +169,6 @@
         @keyframes shimmer { to { background-position: -200% 0; } }
         @media (prefers-reduced-motion: reduce) { .skeleton i { animation: none; } }
 
-        /* Keyboard shortcuts */
         .sc-sticky {
             position: sticky; top: 0; z-index: 5; margin: 0 -12px 8px; padding: 12px 12px 8px;
             background: var(--bg-main);
@@ -185,10 +179,15 @@
         .chip {
             background: transparent; color: var(--text-secondary); border: 1px solid var(--border-color);
             padding: 4px 11px; border-radius: 14px; font-size: 12px; cursor: pointer;
+            display: inline-flex; align-items: center; gap: 6px;
         }
         .chip:hover { color: var(--text-primary); border-color: var(--accent); }
         .chip.active { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
-        .chip b { font-weight: 600; opacity: 0.75; margin-left: 4px; }
+        .chip b { font-weight: 600; opacity: 0.75; }
+        .chip .chip-x { background: none; border: none; color: inherit; cursor: pointer; font-size: 14px; line-height: 1; padding: 0; opacity: 0.7; }
+        .chip .chip-x:hover { opacity: 1; }
+        .chip.blocked { border-color: rgba(239, 68, 68, 0.5); color: #ef4444; background: rgba(239, 68, 68, 0.08); }
+        .chip.blocked:hover { border-color: #ef4444; }
 
         .record-banner {
             margin-top: 10px; padding: 10px 14px; border-radius: 10px;
@@ -248,6 +247,70 @@
         .modal-card h3 { font-size: 16px; }
         .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
         .form-error { color: var(--danger); font-size: 13px; min-height: 16px; }
+
+        /* ---------- Extensions ---------- */
+        .ext-toolbar { display: flex; gap: 10px; margin-bottom: 16px; align-items: center; }
+        .ext-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border-color); margin-bottom: 18px; }
+        .ext-tab {
+            background: none; border: none; color: var(--text-secondary); font-size: 14px; font-weight: 600;
+            padding: 10px 14px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
+        }
+        .ext-tab:hover { color: var(--text-primary); }
+        .ext-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+        .ext-empty { text-align: center; padding: 48px 20px 24px; color: var(--text-secondary); }
+        .ext-empty-art { font-size: 48px; opacity: 0.6; margin-bottom: 12px; }
+        .ext-empty a { color: var(--accent); text-decoration: none; }
+        .ext-empty a:hover { text-decoration: underline; }
+        .ext-hint { margin-top: 16px; padding: 10px 14px; font-size: 12px; color: var(--text-secondary); background: var(--accent-soft); border-radius: 10px; line-height: 1.5; }
+        .ext-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 12px; padding: 16px; margin-bottom: 12px; display: flex; gap: 14px; align-items: flex-start; }
+        .ext-icon { width: 44px; height: 44px; border-radius: 10px; background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 60%, #000)); display: flex; align-items: center; justify-content: center; font-size: 22px; flex: none; color: #fff; }
+        .ext-info { flex: 1; min-width: 0; }
+        .ext-name { font-size: 15px; font-weight: 600; margin-bottom: 2px; }
+        .ext-meta { font-size: 12px; color: var(--text-secondary); margin-bottom: 6px; }
+        .ext-desc { font-size: 13px; color: var(--text-secondary); line-height: 1.5; margin-bottom: 10px; }
+        .ext-actions { display: flex; gap: 8px; }
+
+        /* ---------- Parental ---------- */
+        .pc-pin-row { display: flex; gap: 10px; width: 100%; }
+        .pc-pin-row input { flex: 1; letter-spacing: 0.4em; font-family: ui-monospace, Menlo, Consolas, monospace; text-align: center; }
+        .pc-empty { text-align: center; padding: 12px 0 4px; color: var(--text-secondary); display: flex; flex-direction: column; gap: 10px; align-items: center; }
+        .pc-usage { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; }
+        .pc-usage-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 12px; padding: 16px; }
+        .pc-usage-card h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-secondary); margin-bottom: 8px; }
+        .pc-usage-card .pc-big { font-size: 22px; font-weight: 700; }
+        .pc-usage-card .pc-sub { font-size: 12px; color: var(--text-secondary); margin-top: 4px; }
+        .pc-usage-card .bar { margin-top: 10px; }
+        .pc-usage-card.warn .bar > div { background: var(--warn); }
+        .pc-usage-card.danger .bar > div { background: var(--danger); }
+        .pc-usage-actions { display: flex; align-items: center; margin-top: 12px; gap: 10px; }
+        .pc-muted { color: var(--text-secondary); font-size: 12px; padding: 6px 0; }
+        .pc-allow-add { display: flex; gap: 8px; width: 100%; }
+        .pc-allow-add input { flex: 1; }
+        .pc-budget-row { display: flex; align-items: center; gap: 14px; padding: var(--row-pad); background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 12px; margin-bottom: 10px; }
+        .pc-budget-row .pc-budget-name { flex: 1; }
+        .pc-budget-row .pc-budget-name strong { font-size: 14px; }
+        .pc-budget-row .pc-budget-name small { display: block; color: var(--text-secondary); font-size: 12px; margin-top: 2px; }
+        .pc-budget-row input[type="number"] { width: 90px; text-align: right; }
+        .pc-budget-row .pc-unit { color: var(--text-secondary); font-size: 13px; }
+        .pc-forgot { display: flex; justify-content: flex-end; margin-top: 4px; }
+        .pc-forgot .btn { color: var(--text-secondary); font-size: 12px; padding: 4px 10px; }
+        .pc-forgot .btn:hover { color: var(--accent); border-color: var(--accent); }
+        .pc-recovery-actions { display: flex; justify-content: flex-end; gap: 10px; }
+        .pc-code {
+            font-family: ui-monospace, Menlo, Consolas, monospace;
+            font-size: 20px; font-weight: 700; letter-spacing: 0.08em;
+            padding: 16px; border-radius: 10px; text-align: center;
+            background: var(--input-bg); border: 1px dashed var(--accent); color: var(--accent);
+            user-select: text; word-break: break-all;
+        }
+        .pc-file-reset { margin-top: 12px; padding: 12px 14px; border-radius: 10px; background: var(--hover); font-size: 12.5px; color: var(--text-secondary); line-height: 1.55; }
+        .pc-file-reset p { margin-bottom: 6px; }
+        .pc-file-reset p:last-child { margin-bottom: 0; }
+        .pc-file-reset code {
+            font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px;
+            background: var(--input-bg); padding: 2px 7px; border-radius: 6px; color: var(--accent);
+            user-select: text; word-break: break-all;
+        }
     </style>
 </head>
 <body>
@@ -259,6 +322,7 @@
         <a class="nav-item" data-section="history" href="#history">History</a>
         <a class="nav-item" data-section="bookmarks" href="#bookmarks">Bookmarks <span class="nav-badge" id="badge-bookmarks" hidden></span></a>
         <a class="nav-item" data-section="downloads" href="#downloads">Downloads <span class="nav-badge" id="badge-downloads" hidden></span></a>
+        <a class="nav-item" data-section="extensions" href="#extensions">Extensions</a>
 
         <div class="nav-group">Settings</div>
         <a class="nav-item" data-section="appearance" href="#appearance">Appearance &amp; Theme</a>
@@ -267,6 +331,11 @@
         <a class="nav-item" data-section="shortcuts" href="#shortcuts">Keyboard Shortcuts <span class="nav-badge" id="badge-shortcuts" hidden></span></a>
         <a class="nav-item" data-section="passwords" href="#passwords">Passwords</a>
         <a class="nav-item" data-section="privacy" href="#privacy">Privacy &amp; Security</a>
+
+        <div class="nav-group" id="nav-group-family">Family</div>
+        <a class="nav-item" data-section="parental" href="#parental" id="nav-parental">Parental Controls <span class="nav-badge" id="badge-parental" hidden>ON</span></a>
+
+        <div class="nav-group">About</div>
         <a class="nav-item" data-section="about" href="#about">About</a>
     </nav>
 
@@ -304,6 +373,38 @@
             <div class="list" id="downloads-list"><div class="skeleton"><i></i><i></i><i></i></div></div>
         </section>
 
+        <!-- EXTENSIONS -->
+        <section class="page-section" id="extensions">
+            <h1 class="section-header">Extensions</h1>
+            <p class="section-sub">Neira runs local extensions: small scripts that add features to pages you visit.</p>
+
+            <div class="ext-toolbar">
+                <button class="btn btn-primary" id="ext-load">Load unpacked…</button>
+                <span style="flex:1"></span>
+            </div>
+
+            <div class="ext-tabs" role="tablist">
+                <button class="ext-tab active" data-tab="mine" role="tab" aria-selected="true">My extensions</button>
+                <button class="ext-tab" data-tab="shortcuts" role="tab" aria-selected="false">Keyboard shortcuts</button>
+            </div>
+
+            <div class="ext-panel" id="ext-panel-mine">
+                <div class="list" id="ext-list"><div class="skeleton"><i></i><i></i><i></i></div></div>
+                <div class="ext-empty" id="ext-empty" hidden>
+                    <div class="ext-empty-art">🧩</div>
+                    <p>Find extensions and themes in the <a href="https://chromewebstore.google.com/" id="ext-store">Chrome Web Store</a>.</p>
+                </div>
+                <div class="ext-hint">
+                    Neira's local extensions are a small, in-house format: a folder with a <code>manifest.json</code> and a JavaScript file. They run in a sandbox and can read the page you are on.
+                </div>
+            </div>
+
+            <div class="ext-panel" id="ext-panel-shortcuts" hidden>
+                <p class="section-sub">Each extension can register its own shortcuts. These are separate from the browser's shortcuts.</p>
+                <div id="ext-shortcuts-body"></div>
+            </div>
+        </section>
+
         <!-- APPEARANCE -->
         <section class="page-section" id="appearance">
             <h1 class="section-header">Appearance &amp; Theme</h1>
@@ -320,7 +421,7 @@
             <div class="setting-card stack">
                 <div class="setting-info">
                     <h3>Accent color</h3>
-                    <p>Colors buttons, highlights, the active tab and the new tab page. Pick a preset or choose any color with the rainbow circle.</p>
+                    <p>Colors buttons, highlights, the active tab and the new tab page.</p>
                 </div>
                 <div class="swatches" id="accent-swatches" role="radiogroup" aria-label="Accent color"></div>
             </div>
@@ -328,7 +429,7 @@
             <div class="setting-card">
                 <div class="setting-info">
                     <h3>Color the surfaces</h3>
-                    <p>Let the accent tint the toolbar, tabs and these pages, so you get a blue or red theme instead of only blue or red buttons.</p>
+                    <p>Let the accent tint the toolbar, tabs and these pages.</p>
                 </div>
                 <select id="tint-select" aria-label="Surface tint">
                     <option value="off">Off</option>
@@ -351,7 +452,7 @@
             <div class="setting-card">
                 <div class="setting-info">
                     <h3>Tab layout</h3>
-                    <p>Vertical tabs live in a sidebar on the left. Press Alt+V to switch quickly.</p>
+                    <p>Vertical tabs live in a sidebar on the left.</p>
                 </div>
                 <select id="layout-select" aria-label="Tab layout">
                     <option value="horizontal">Horizontal (top)</option>
@@ -362,7 +463,7 @@
             <div class="setting-card">
                 <div class="setting-info">
                     <h3>Collapse tab sidebar</h3>
-                    <p>Show only icons in the vertical sidebar. Only applies to vertical tabs.</p>
+                    <p>Show only icons in the vertical sidebar.</p>
                 </div>
                 <label class="switch"><input type="checkbox" id="sidebar-collapsed" aria-label="Collapse tab sidebar"><span class="slider"></span></label>
             </div>
@@ -370,7 +471,7 @@
             <div class="setting-card">
                 <div class="setting-info">
                     <h3>New tab wallpaper</h3>
-                    <p>Pick an animated preset, or use your own image or live video, on the new tab page.</p>
+                    <p>Pick an animated preset, or use your own image or live video.</p>
                 </div>
                 <button class="btn" id="open-newtab">Customize…</button>
             </div>
@@ -384,14 +485,14 @@
             </div>
         </section>
 
-        <!-- SEARCH & STARTUP -->
+        <!-- LOCAL AI -->
         <section class="page-section" id="ai">
             <h1 class="section-header">Local AI</h1>
 
             <div class="setting-card">
                 <div class="setting-info">
                     <h3>AI summaries and questions</h3>
-                    <p>Let the assistant use a small AI model that runs on your own graphics card. Nothing about the pages you read is sent to any server.</p>
+                    <p>Let the assistant use a small AI model that runs on your own graphics card.</p>
                 </div>
                 <label class="switch"><input type="checkbox" id="ai-toggle" aria-label="Local AI"><span class="slider"></span></label>
             </div>
@@ -399,7 +500,7 @@
             <div class="setting-card">
                 <div class="setting-info">
                     <h3>Model</h3>
-                    <p>Bigger models write better summaries but need more memory and take longer. The model is downloaded once, the first time you use it.</p>
+                    <p>Bigger models write better summaries but need more memory.</p>
                 </div>
                 <select id="ai-model" aria-label="Local AI model">
                     <option value="fast">Fast: Llama 3.2 1B (about 0.7 GB)</option>
@@ -407,15 +508,9 @@
                     <option value="smart">Smart: Llama 3.2 3B (about 1.8 GB)</option>
                 </select>
             </div>
-
-            <div class="setting-card">
-                <div class="setting-info">
-                    <h3>Using it</h3>
-                    <p>Open the assistant with Alt + A, then use Summarise this page, or type a question about the page. Press the gear icon there to download or remove the model. If your computer does not support WebGPU, the assistant keeps using its built-in summaries.</p>
-                </div>
-            </div>
         </section>
 
+        <!-- SEARCH & STARTUP -->
         <section class="page-section" id="search">
             <h1 class="section-header">Search &amp; Startup</h1>
             <p class="section-sub">What the address bar searches with, and how Neira opens.</p>
@@ -456,7 +551,7 @@
             <div class="setting-card">
                 <div class="setting-info">
                     <h3>Launch in private mode</h3>
-                    <p>New windows (and the window Neira opens with) start as private windows.</p>
+                    <p>New windows start as private windows.</p>
                 </div>
                 <label class="switch"><input type="checkbox" id="incognito-startup" aria-label="Launch in private mode"><span class="slider"></span></label>
             </div>
@@ -465,13 +560,13 @@
         <!-- KEYBOARD SHORTCUTS -->
         <section class="page-section" id="shortcuts">
             <h1 class="section-header">Keyboard Shortcuts</h1>
-            <p class="section-sub">Click a shortcut, then press the new keys. Changes work immediately, and you can undo any change.</p>
+            <p class="section-sub">Click a shortcut, then press the new keys. Changes work immediately.</p>
 
             <div class="sc-sticky">
                 <div class="sc-toolbar">
                     <input type="search" id="sc-search" placeholder="Search by name or keys…" autocomplete="off" spellcheck="false" aria-label="Search shortcuts" />
-                    <button class="btn" id="sc-export" title="Save your shortcuts to a file">Export</button>
-                    <button class="btn" id="sc-import" title="Load shortcuts from a file">Import</button>
+                    <button class="btn" id="sc-export">Export</button>
+                    <button class="btn" id="sc-import">Import</button>
                     <button class="btn btn-danger" id="sc-reset">Reset all</button>
                 </div>
                 <div class="chips" id="sc-chips" role="group" aria-label="Filter shortcuts"></div>
@@ -525,7 +620,7 @@
             <div class="setting-card">
                 <div class="setting-info">
                     <h3>Private window</h3>
-                    <p>Browse without saving history, cookies or site data. Everything is wiped when the window closes.</p>
+                    <p>Browse without saving history, cookies or site data.</p>
                 </div>
                 <button class="btn btn-primary" id="open-private">Open private window</button>
             </div>
@@ -533,7 +628,7 @@
             <div class="setting-card">
                 <div class="setting-info">
                     <h3>Clear browsing data</h3>
-                    <p>Deletes history, cookies, site data and cached files. Passwords and bookmarks are kept.</p>
+                    <p>Deletes history, cookies, site data and cached files.</p>
                 </div>
                 <button class="btn btn-danger" id="clear-data">Clear data…</button>
             </div>
@@ -552,6 +647,197 @@
                     <p>Removes every saved password and declined site permanently.</p>
                 </div>
                 <button class="btn btn-danger" id="pw-delete-all">Delete passwords…</button>
+            </div>
+        </section>
+
+        <!-- PARENTAL CONTROLS -->
+        <section class="page-section" id="parental">
+            <h1 class="section-header">Parental Controls</h1>
+            <p class="section-sub">SafeSearch, an educational allowlist, and daily screen-time budgets per category. Enforced inside the browser, not just hidden in the UI.</p>
+
+            <!-- Locked view -->
+            <div id="pc-locked">
+                <div class="setting-card stack">
+                    <div class="setting-info">
+                        <h3 id="pc-lock-title">Parental controls are locked</h3>
+                        <p id="pc-lock-sub">Enter your PIN to view and change parental settings.</p>
+                    </div>
+                    <div class="pc-pin-row" id="pc-pin-wrap">
+                        <input type="password" id="pc-pin" inputmode="numeric" pattern="[0-9]*" maxlength="8" placeholder="PIN" autocomplete="off" aria-label="Parental PIN" />
+                        <button class="btn btn-primary" id="pc-unlock">Unlock</button>
+                    </div>
+                    <div class="form-error" id="pc-lock-error" role="alert"></div>
+                    <div class="pc-forgot" id="pc-forgot-row">
+                        <button class="btn btn-small" id="pc-forgot">Forgot PIN?</button>
+                    </div>
+                    <div class="pc-empty" id="pc-no-pin" hidden>
+                        <p>Parental controls are off. Set a PIN to turn them on.</p>
+                        <button class="btn btn-primary" id="pc-setup-start">Set up parental controls</button>
+                    </div>
+                </div>
+
+                <div class="setting-card stack" id="pc-recovery" hidden>
+                    <div class="setting-info">
+                        <h3>Recover access</h3>
+                        <p>Enter the recovery code that was shown when you turned on parental controls. It looks like <code>NEIRA-XXXX-XXXX-XXXX</code>. Then choose a new PIN.</p>
+                    </div>
+                    <div class="pc-pin-row">
+                        <input type="text" id="pc-recovery-code" placeholder="NEIRA-XXXX-XXXX-XXXX" autocomplete="off" spellcheck="false" aria-label="Recovery code" />
+                    </div>
+                    <div class="pc-pin-row">
+                        <input type="password" id="pc-recovery-new" inputmode="numeric" pattern="[0-9]*" maxlength="8" placeholder="New PIN" autocomplete="off" aria-label="New PIN" />
+                        <input type="password" id="pc-recovery-new2" inputmode="numeric" pattern="[0-9]*" maxlength="8" placeholder="Confirm new PIN" autocomplete="off" aria-label="Confirm new PIN" />
+                    </div>
+                    <div class="form-error" id="pc-recovery-error" role="alert"></div>
+                    <div class="pc-recovery-actions">
+                        <button class="btn" id="pc-recovery-cancel">Cancel</button>
+                        <button class="btn btn-primary" id="pc-recovery-save">Recover access</button>
+                    </div>
+                    <div class="pc-file-reset">
+                        <p><strong>Lost the recovery code too?</strong> Close Neira, then create an empty file named exactly</p>
+                        <p><code id="pc-reset-path">DISABLE-PARENTAL-CONTROLS.txt</code></p>
+                        <p>in the Neira profile folder, and start Neira again.</p>
+                    </div>
+                </div>
+
+                <div class="setting-card stack" id="pc-newrecovery" hidden>
+                    <div class="setting-info">
+                        <h3>Save your new recovery code</h3>
+                        <p>This is the only time you will see it. Write it down somewhere safe — you will need it if you forget the PIN again.</p>
+                    </div>
+                    <div class="pc-code" id="pc-newrecovery-code"></div>
+                    <div class="pc-recovery-actions">
+                        <button class="btn" id="pc-newrecovery-copy">Copy</button>
+                        <button class="btn btn-primary" id="pc-newrecovery-done">I've saved it</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Setup view -->
+            <div id="pc-setup" hidden>
+                <div class="setting-card stack" id="pc-setup-form">
+                    <div class="setting-info">
+                        <h3>Choose a PIN</h3>
+                        <p>4 to 8 digits. Only a parent should know this. You will need it to change or turn off parental controls.</p>
+                    </div>
+                    <div class="pc-pin-row">
+                        <input type="password" id="pc-new-pin" inputmode="numeric" pattern="[0-9]*" maxlength="8" placeholder="New PIN" autocomplete="off" aria-label="New PIN" />
+                        <input type="password" id="pc-new-pin2" inputmode="numeric" pattern="[0-9]*" maxlength="8" placeholder="Confirm PIN" autocomplete="off" aria-label="Confirm PIN" />
+                        <button class="btn btn-primary" id="pc-setup-save">Turn on</button>
+                    </div>
+                    <div class="form-error" id="pc-setup-error" role="alert"></div>
+                    <button class="btn" id="pc-setup-cancel">Cancel</button>
+                </div>
+
+                <div class="setting-card stack" id="pc-setup-recovery" hidden>
+                    <div class="setting-info">
+                        <h3>Save your recovery code</h3>
+                        <p>Parental controls are on. If you ever forget the PIN, this code is how you get back in. <strong>This is the only time it will be shown.</strong></p>
+                    </div>
+                    <div class="pc-code" id="pc-setup-recovery-code"></div>
+                    <div class="pc-recovery-actions">
+                        <button class="btn" id="pc-setup-recovery-copy">Copy</button>
+                        <button class="btn btn-primary" id="pc-setup-recovery-done">I've saved it</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Unlocked dashboard -->
+                        <div id="pc-dashboard" hidden>
+                <div id="pc-state-banner"></div>
+                <div class="setting-card">
+                    <div class="setting-info">
+                        <h3>Parental controls are on</h3>
+                        <p>Enforcement applies to every normal window and every webview.</p>
+                    </div>
+                    <button class="btn btn-danger" id="pc-disable">Turn off…</button>
+                </div>
+                <!-- ...rest unchanged... -->
+
+                <h2 class="sub-header">Security</h2>
+                <div class="setting-card">
+                    <div class="setting-info">
+                        <h3>Change PIN</h3>
+                        <p>Set a new PIN and rotate the recovery code. Useful if someone saw you type it.</p>
+                    </div>
+                    <button class="btn" id="pc-change-pin">Change PIN…</button>
+                </div>
+
+                <h2 class="sub-header">Today</h2>
+                <div class="pc-usage" id="pc-usage"></div>
+                <div class="pc-usage-actions">
+                    <button class="btn btn-small" id="pc-reset-day">Reset today's time</button>
+                    <span style="flex:1"></span>
+                    <span class="pc-muted" id="pc-date"></span>
+                </div>
+
+                <h2 class="sub-header">Enforcement</h2>
+                <div class="setting-card">
+                    <div class="setting-info">
+                        <h3>Force SafeSearch</h3>
+                        <p>Rewrites Google, Bing, DuckDuckGo, Brave and Ecosia queries to their strict variants, at the network level.</p>
+                    </div>
+                    <label class="switch"><input type="checkbox" id="pc-safesearch" aria-label="Force SafeSearch"><span class="slider"></span></label>
+                </div>
+                <div class="setting-card">
+                    <div class="setting-info">
+                        <h3>Educational allowlist only</h3>
+                        <p>Block every website that is not on the allowlist below.</p>
+                    </div>
+                    <label class="switch"><input type="checkbox" id="pc-allowlist-only" aria-label="Allowlist only"><span class="slider"></span></label>
+                </div>
+
+                <h2 class="sub-header">Hidden mode</h2>
+                <div class="setting-card">
+                    <div class="setting-info">
+                        <h3>Lock parental controls</h3>
+                        <p>Keep parental controls running but require the PIN to open this page. Every visit starts at the PIN prompt.</p>
+                    </div>
+                    <label class="switch"><input type="checkbox" id="pc-locked-toggle" aria-label="Lock parental controls"><span class="slider"></span></label>
+                </div>
+                <div class="setting-card">
+                    <div class="setting-info">
+                        <h3>Hide parental controls completely</h3>
+                        <p>Removes the Parental Controls entry from the sidebar. Enforcement keeps running. To reach this page, type <code>neira://parental</code> in the address bar.</p>
+                    </div>
+                    <label class="switch"><input type="checkbox" id="pc-hidden-toggle" aria-label="Hide parental controls"><span class="slider"></span></label>
+                </div>
+                <div class="setting-card stack" id="pc-hidden-note" hidden>
+                    <div class="setting-info">
+                        <h3>Reaching this page while hidden</h3>
+                        <p>Type <code>neira://parental</code> in the address bar. The PIN prompt appears first.</p>
+                    </div>
+                </div>
+
+                <h2 class="sub-header">Blocked websites</h2>
+                <p class="section-sub">Sites on this list are always blocked, even if they are on the allowlist or have time left.</p>
+                <div class="setting-card stack">
+                    <div class="pc-allow-add">
+                        <input type="text" id="pc-block-input" placeholder="example.com" autocomplete="off" spellcheck="false" aria-label="Add blocked domain" />
+                        <button class="btn btn-primary" id="pc-block-add">Block</button>
+                    </div>
+                    <div class="chips" id="pc-block-list"></div>
+                </div>
+
+                <h2 class="sub-header">Allowed websites</h2>
+                <p class="section-sub">Domains only. Subdomains are included automatically.</p>
+                <div class="setting-card stack">
+                    <div class="pc-allow-add">
+                        <input type="text" id="pc-allow-input" placeholder="example.org" autocomplete="off" spellcheck="false" aria-label="Add allowed domain" />
+                        <button class="btn btn-primary" id="pc-allow-add">Add</button>
+                    </div>
+                    <div class="chips" id="pc-allow-list"></div>
+                </div>
+
+                <h2 class="sub-header">Daily time budgets</h2>
+                <p class="section-sub">Minutes per category, per day. Set to 0 to block a category entirely.</p>
+                <div id="pc-budgets"></div>
+
+                <h2 class="sub-header">Recent blocks</h2>
+                <div class="list" id="pc-blocks"></div>
+                <div style="margin-top:8px; text-align:right">
+                    <button class="btn btn-small" id="pc-clear-blocks">Clear block history</button>
+                </div>
             </div>
         </section>
 
@@ -583,6 +869,34 @@
             <div class="modal-actions">
                 <button class="btn" id="pw-cancel">Cancel</button>
                 <button class="btn btn-primary" id="pw-save">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="pc-pin-modal">
+        <div class="modal-card" role="dialog" aria-label="Enter parental PIN">
+            <h3 id="pc-pin-modal-title">Enter parental PIN</h3>
+            <p class="section-sub" id="pc-pin-modal-sub" style="margin-bottom:4px">Parental controls are protected. Enter your PIN to continue.</p>
+            <input type="password" id="pc-pin-modal-input" inputmode="numeric" maxlength="8" placeholder="PIN" autocomplete="off" aria-label="Parental PIN" />
+            <div class="form-error" id="pc-pin-modal-error"></div>
+            <div class="modal-actions">
+                <button class="btn" id="pc-pin-modal-cancel">Cancel</button>
+                <button class="btn btn-primary" id="pc-pin-modal-ok">Continue</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="pc-changepin-modal">
+        <div class="modal-card" role="dialog" aria-label="Change parental PIN">
+            <h3>Change parental PIN</h3>
+            <p class="section-sub" style="margin-bottom:4px">Enter your current PIN, then choose a new one. Your recovery code will be replaced with a new one.</p>
+            <input type="password" id="pc-changepin-current" inputmode="numeric" maxlength="8" placeholder="Current PIN" autocomplete="off" aria-label="Current PIN" />
+            <input type="password" id="pc-changepin-new" inputmode="numeric" maxlength="8" placeholder="New PIN (4–8 digits)" autocomplete="off" aria-label="New PIN" />
+            <input type="password" id="pc-changepin-new2" inputmode="numeric" maxlength="8" placeholder="Confirm new PIN" autocomplete="off" aria-label="Confirm new PIN" />
+            <div class="form-error" id="pc-changepin-error"></div>
+            <div class="modal-actions">
+                <button class="btn" id="pc-changepin-cancel">Cancel</button>
+                <button class="btn btn-primary" id="pc-changepin-save">Change PIN</button>
             </div>
         </div>
     </div>

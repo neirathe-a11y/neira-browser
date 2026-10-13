@@ -40,7 +40,8 @@ const CATEGORIES = [
             ['close_tabs_right', 'Close tabs to the right', ''],
             ['reload_all_tabs', 'Reload all tabs', ''],
             ['toggle_vertical_tabs', 'Switch between horizontal and vertical tabs', 'Alt + V'],
-            ['toggle_sidebar', 'Collapse / expand the tab sidebar', 'Alt + Shift + V']
+            ['toggle_sidebar', 'Collapse / expand the tab sidebar', 'Alt + Shift + V'],
+            ['open_extensions', 'Open extensions page', 'Ctrl + Shift + E']
         ]
     },
     {
@@ -120,7 +121,8 @@ const CATEGORIES = [
             ['show_shortcuts', 'Customize keyboard shortcuts', 'Ctrl + Alt + K'],
             ['toggle_theme', 'Switch light / dark theme', 'Alt + Shift + L'],
             ['toggle_density', 'Switch compact / comfortable layout', ''],
-            ['open_help', 'Open help page', 'F1']
+            ['open_help', 'Open help page', 'F1'],
+            ['open_parental', 'Open parental controls', '']
         ]
     }
 ];
