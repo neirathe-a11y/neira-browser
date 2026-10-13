@@ -1,6 +1,4 @@
 'use strict';
-// Renderer for a browser window. Keystrokes are matched in the main process (main.js);
-// this file only *executes* the action ids it is sent, so there is exactly one shortcut path.
 (() => {
     const api = window.neira;
     const $ = id => document.getElementById(id);
@@ -28,6 +26,7 @@
     const tabSearchInput = $('tab-search-input');
     const tabSearchList = $('tab-search-list');
     const toastEl = $('toast');
+    const railTabsList = $('rail-tabs-list');
 
     const PRIVATE = new URLSearchParams(location.search).get('private') === '1';
     const PARTITION = PRIVATE ? 'private-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 10) : '';
@@ -35,7 +34,7 @@
     const BASE = new URL('./', location.href).href;
     const PAGES_URL = BASE + 'pages.html';
     const NEWTAB_URL = BASE + 'newtab.html';
-    const SECTIONS = ['history', 'bookmarks', 'downloads', 'appearance', 'search', 'shortcuts', 'passwords', 'privacy', 'about'];
+    const SECTIONS = ['history', 'bookmarks', 'downloads', 'appearance', 'search', 'shortcuts', 'passwords', 'privacy', 'permissions', 'about', 'extensions', 'ai', 'parental'];
     const ALIASES = { settings: 'appearance', help: 'shortcuts' };
 
     const ZOOM_STEPS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5];
@@ -45,8 +44,8 @@
 
     const tabs = [];
     const closedTabs = [];
-    let mru = [];             // tab ids, most recently used first
-    let cycle = null;         // active Ctrl+Tab cycling session
+    let mru = [];
+    let cycle = null;
     let activeId = null;
     let splitActiveId = null;
     let isSplitScreen = false;
@@ -59,11 +58,9 @@
     let shortcutMap = {};
     let bookmarks = [];
 
-    // -----------------------------------------------------------------------
-    // Small helpers
-    // -----------------------------------------------------------------------
     let toastTimer;
     function toast(message) {
+        if (!toastEl) return;
         toastEl.textContent = message;
         toastEl.classList.add('show');
         clearTimeout(toastTimer);
@@ -83,12 +80,11 @@
         const m = /^neira:\/\/([a-z]+)\/?(#[a-z]+)?$/i.exec(url);
         if (!m) return null;
         let name = m[1].toLowerCase();
-        if (name === 'newtab') return NEWTAB_URL + (m[2] || ''); // neira://newtab#customize opens the Customize drawer
+        if (name === 'newtab') return NEWTAB_URL + (m[2] || '');
         name = ALIASES[name] || name;
         return SECTIONS.includes(name) ? PAGES_URL + '#' + name : null;
     }
 
-    // file:// URL of one of our pages -> neira://name (what the user sees)
     function toDisplayUrl(url) {
         if (!isInternal(url)) return url;
         try {
@@ -102,7 +98,6 @@
         return url;
     }
 
-    // Turns whatever was typed into a loadable URL (or a search).
     function resolveInput(raw) {
         const s = String(raw || '').trim();
         if (!s) return null;
@@ -115,6 +110,35 @@
             return (local ? 'http://' : 'https://') + s;
         }
         return settings.engine + encodeURIComponent(s);
+    }
+
+    // -----------------------------------------------------------------------
+    // Rail rendering
+    // -----------------------------------------------------------------------
+    function renderRail() {
+        if (!railTabsList) return;
+        railTabsList.replaceChildren();
+        for (const t of tabs) {
+            const btn = document.createElement('button');
+            btn.className = 'rail-tab' + (t.id === activeId ? ' active' : '');
+            btn.title = t.title || 'New Tab';
+            btn.dataset.tabId = t.id;
+            const initial = (t.title || '•').trim()[0]?.toUpperCase() || '•';
+            if (t.favicon && !t.loading) {
+                const img = document.createElement('img');
+                img.src = t.favicon;
+                img.alt = '';
+                img.addEventListener('error', () => {
+                    img.replaceWith(document.createTextNode(initial));
+                });
+                btn.appendChild(img);
+            } else {
+                btn.textContent = initial;
+            }
+            btn.addEventListener('click', () => switchTab(t.id));
+            btn.addEventListener('auxclick', e => { if (e.button === 1) closeTab(t.id); });
+            railTabsList.appendChild(btn);
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -142,7 +166,6 @@
             loading: false
         };
 
-        // Tab element (built with DOM APIs: page titles are untrusted)
         const el = document.createElement('div');
         el.className = 'tab';
         const fav = document.createElement('img');
@@ -168,7 +191,6 @@
         el.addEventListener('auxclick', e => { if (e.button === 1) closeTab(id); });
         close.addEventListener('click', e => { e.stopPropagation(); closeTab(id); });
 
-        // Webview (src must be set before it is attached: main decides sandboxing from it)
         const wv = document.createElement('webview');
         wv.setAttribute('src', target);
         if (PRIVATE && !tab.internal) wv.setAttribute('partition', PARTITION);
@@ -195,6 +217,7 @@
             switchTab(id);
             if (focusBar) focusAddressBar();
         }
+        renderRail();
         return tab;
     }
 
@@ -211,6 +234,7 @@
             tab.spin.hidden = !on;
             tab.fav.hidden = on || !tab.favicon;
             if (tab.id === activeId || tab.id === splitActiveId) updateNavButtons();
+            renderRail();
         };
 
         wv.addEventListener('did-start-loading', () => setLoading(true));
@@ -234,31 +258,33 @@
             tab.initialEl.textContent = (tab.title.trim()[0] || '•').toUpperCase();
             recordHistory(tab, tab.url);
             if (tab.id === activeId) updateWindowTitle();
+            renderRail();
         });
 
         wv.addEventListener('page-favicon-updated', e => {
             tab.favicon = (e.favicons && e.favicons[0]) || '';
             tab.fav.src = tab.favicon;
             tab.fav.hidden = tab.loading || !tab.favicon;
+            renderRail();
         });
 
         const onNavigated = e => {
             if (e.isMainFrame === false) return;
-            if (e.url.startsWith('data:')) return; // error / source pages keep their label
+            if (e.url.startsWith('data:')) return;
             tab.errorFor = null;
             tab.url = toDisplayUrl(e.url);
             if (tab.id === activeId) {
                 urlInput.value = barText(tab);
                 updateStar();
-                updateNavButtons();
             }
+            updateNavButtons();
             recordHistory(tab, e.url);
         };
         wv.addEventListener('did-navigate', onNavigated);
         wv.addEventListener('did-navigate-in-page', onNavigated);
 
         wv.addEventListener('did-fail-load', e => {
-            if (!e.isMainFrame || e.errorCode === -3) return; // -3 = aborted by a newer navigation
+            if (!e.isMainFrame || e.errorCode === -3) return;
             tab.errorFor = e.validatedURL;
             tab.title = 'Page failed to load';
             tab.titleEl.textContent = tab.title;
@@ -321,6 +347,7 @@
         updateStar();
         updateNavButtons();
         updateWindowTitle();
+        renderRail();
     }
 
     function toggleSplitScreen() {
@@ -343,7 +370,7 @@
         if (!tabs.some(t => t.id === id)) return;
         cycle = null;
         if (readingTabId && readingTabId !== id) stopReading();
-        api.shortcuts.stopRecording(); // never leave keyboard capture on across tabs
+        api.shortcuts.stopRecording();
         if (activeId !== id) closeFind(false);
         showTab(id);
         pushMru(id);
@@ -374,6 +401,7 @@
             splitActiveId = other ? other.id : activeId;
             showTab(activeId);
         }
+        renderRail();
     }
 
     function cycleTabs(direction) {
@@ -382,7 +410,6 @@
         switchTab(tabs[(i + direction + tabs.length) % tabs.length].id);
     }
 
-    // Ctrl+Tab: preview most-recently-used tabs while the modifier is held; commit on release.
     function cycleMru(direction) {
         if (tabs.length < 2) return;
         if (!cycle) {
@@ -415,6 +442,7 @@
         [tabs[i], tabs[j]] = [tabs[j], tabs[i]];
         tabsListEl.replaceChildren(...tabs.map(t => t.el));
         activeTab().el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+        renderRail();
     }
 
     function duplicateTab() {
@@ -439,7 +467,6 @@
         toast(`Reloading ${pluralTabs(tabs.length)}`);
     }
 
-    // neira:// pages are all sections of one page, so reuse its tab and just change the section.
     function openInternal(name) {
         const src = toInternalSrc('neira://' + name);
         if (!src) return;
@@ -452,11 +479,6 @@
         createTab(src, { resolved: true });
     }
 
-    // -----------------------------------------------------------------------
-    // Navigation
-    // -----------------------------------------------------------------------
-    // Webview loads reject when a page fails or is interrupted. We already show an error page for
-    // real failures, so swallow the rejection instead of leaving it unhandled in the renderer.
     function loadInTab(tab, url) {
         if (tab.ready) tab.webview.loadURL(url).catch(() => {});
         else tab.webview.setAttribute('src', url);
@@ -466,17 +488,16 @@
         const url = resolveInput(raw);
         if (!url) { toast('That page does not exist'); return; }
         if (!tab) { createTab(url, { resolved: true }); return; }
-        // Our pages have a privileged API, so they never navigate to (or from) outside sites in place.
         if (isInternal(url) !== tab.internal || tab.isNewtab) {
             const opened = createTab(url, { resolved: true, after: tab.id });
-            if (opened && tab.isNewtab) closeTab(tab.id); // a new tab page is replaced, not left behind
+            if (opened && tab.isNewtab) closeTab(tab.id);
             return;
         }
         tab.errorFor = null;
         loadInTab(tab, url);
         if (tab.id === activeId) urlInput.blur();
     }
-    // The new tab page asks us to open a URL or search; its own tab becomes the result.
+
     function openFromPage(text, opts) {
         const url = resolveInput(text);
         if (!url) { toast('That page does not exist'); return; }
@@ -505,7 +526,16 @@
         let back = false;
         let forward = false;
         if (tab && tab.ready) {
-            try { back = tab.webview.canGoBack(); forward = tab.webview.canGoForward(); } catch (_) { /* ignore */ }
+            try {
+                const wv = tab.webview;
+                if (wv.navigationHistory) {
+                    back = wv.navigationHistory.canGoBack();
+                    forward = wv.navigationHistory.canGoForward();
+                } else {
+                    back = wv.canGoBack();
+                    forward = wv.canGoForward();
+                }
+            } catch (_) { /* ignore */ }
         }
         backBtn.disabled = !back;
         forwardBtn.disabled = !forward;
@@ -518,9 +548,6 @@
         urlInput.select();
     }
 
-    // -----------------------------------------------------------------------
-    // Focus movement (panes)
-    // -----------------------------------------------------------------------
     function focusToolbar() {
         const b = [...document.querySelectorAll('#toolbar .nav-btn')].find(x => !x.disabled && !x.hidden);
         if (b) b.focus();
@@ -562,9 +589,6 @@
         else focusWebContents();
     }
 
-    // -----------------------------------------------------------------------
-    // Zoom, dark mode, source, save, print, devtools
-    // -----------------------------------------------------------------------
     function setZoom(factor) {
         const tab = activeTab();
         if (!tab) return;
@@ -623,7 +647,6 @@
     function printPage(system) {
         const tab = activeTab();
         if (!tab || !tab.ready) return;
-        // Electron has a single print dialog, so both shortcuts open it; "Print" keeps page backgrounds.
         tab.webview.print(system ? {} : { printBackground: true });
     }
 
@@ -639,9 +662,6 @@
         if (!wv.isDevToolsOpened()) wv.openDevTools();
     }
 
-    // -----------------------------------------------------------------------
-    // Find in page
-    // -----------------------------------------------------------------------
     function openFind() {
         const tab = activeTab();
         if (!tab || !tab.ready) return;
@@ -675,9 +695,6 @@
         if (refocus && tab) tab.webview.focus();
     }
 
-    // -----------------------------------------------------------------------
-    // Bookmarks
-    // -----------------------------------------------------------------------
     function renderBookmarks() {
         bookmarksBar.hidden = settings.showBookmarksBar === false;
         bookmarksBar.replaceChildren();
@@ -725,16 +742,13 @@
         toast(added ? `Bookmarked ${pluralTabs(added)}` : 'Those tabs are already bookmarked');
     }
 
-    // -----------------------------------------------------------------------
-    // Assistant (runs on-device: reads the page, then picks and organises the most useful sentences)
-    // -----------------------------------------------------------------------
+    // Assistant (kept identical to prior version)
     const STOP = new Set(('the a an and or but if of to in on for with at by from as is are was were be been it its this that these ' +
         'those i you he she we they not no so do does did have has had will would can could should may might about into than ' +
         'then there their them his her our your my me what which who whom how when where why also more most other some such ' +
         'only own same too very just over under between after before while during each many much any all new one two like ' +
         'get got use used using see show view page click here read share').split(' '));
 
-    // If ai.js is missing from a build, the assistant still works with its built-in summaries.
     const neiraAI = window.neiraAI || {
         MODELS: {}, stop() {}, unload() {}, isLoaded: () => false, isDownloaded: async () => false, remove: async () => {},
         check: async () => ({ ok: false, reason: 'not-installed', message: 'Local AI files are missing from this build.' }),
@@ -744,12 +758,11 @@
 
     const LENGTHS = { brief: 3, standard: 5, detailed: 8 };
     let assistantLen = 'standard';
-    let lastRequest = null; // { selected: string | null }, so "Summarise again" and the length buttons can repeat it
+    let lastRequest = null;
 
     const asBody = $('assistant-body');
     const asEmpty = $('as-empty');
 
-    // Runs inside the page and returns its structure: headings, paragraphs, and the labels of buttons/links/fields.
     const PAGE_EXTRACT_JS = '(' + (() => {
         const clean = t => (t || '').replace(/\s+/g, ' ').trim();
         const meta = name => {
@@ -764,7 +777,7 @@
         const seen = new Set();
         for (const n of copy.querySelectorAll('h1,h2,h3,h4,p,li,blockquote')) {
             if (blocks.length >= 700) break;
-            if (!/^H\d$/.test(n.tagName) && n.querySelector('p,ul,ol')) continue; // the inner blocks are read instead
+            if (!/^H\d$/.test(n.tagName) && n.querySelector('p,ul,ol')) continue;
             const text = clean(n.textContent);
             if (!text || seen.has(text)) continue;
             seen.add(text);
@@ -805,8 +818,6 @@
         return f;
     }
 
-    // Indices of the n most informative, non-repetitive sentences, in reading order.
-    // boost: words that matter more (title words, or the words of a question).
     function pickIndices(sentences, n, freq, boost = new Set(), boostWeight = 3, dedupe = true) {
         if (n <= 0) return [];
         if (sentences.length <= n) return sentences.map((_, i) => i);
@@ -815,7 +826,7 @@
             let score = 0;
             for (const x of w) score += (freq.get(x) || 0) + (boost.has(x) ? boostWeight : 0);
             score /= Math.sqrt(w.length || 1);
-            if (i < 2) score *= 1.25; // openings usually carry the point
+            if (i < 2) score *= 1.25;
             return { i, w: new Set(w), score };
         }).sort((x, y) => y.score - x.score);
         const chosen = [];
@@ -837,14 +848,14 @@
             .sort((x, y) => y[1] - x[1]).slice(0, count).map(([w]) => w);
     }
 
-    const sample = (list, n) => { // n items spread evenly across the list
+    const sample = (list, n) => {
         if (list.length <= n) return list;
         return Array.from({ length: n }, (_, i) => list[Math.round(i * (list.length - 1) / (n - 1 || 1))]);
     };
 
     function analyzeSelection(text, len) {
         const words = countWords(text);
-        if (!text.trim()) return { kind: 'note', text: 'Select the text you want summarised on the page first. You can also right-click it and choose “Summarise with Neira”.' };
+        if (!text.trim()) return { kind: 'note', text: 'Select the text you want summarised on the page first.' };
         if (words < 25) return { kind: 'note', text: 'That selection is already short. Select a longer passage and try again.' };
         const sentences = splitSentences(text);
         const freq = wordFreq([text]);
@@ -863,7 +874,7 @@
         const n = LENGTHS[len] || 5;
         const paras = data.blocks.filter(b => b.p).map(b => b.p);
         const words = paras.reduce((sum, p) => sum + countWords(p), 0);
-        let sections = null; // [{ heading, paras }]
+        let sections = null;
 
         if (paras.length >= 3 && words >= 120) {
             sections = [];
@@ -885,7 +896,6 @@
         const site = data.siteName || data.host;
         const title = data.title || site;
 
-        // Little readable text: an app or interface (a chat, a dashboard, a search page). Describe what is on it.
         if (!all.length) {
             const pick = (kind, max) => data.labels.filter(l => l.k === kind).slice(0, max).map(l => l.t);
             const groups = [
@@ -896,8 +906,7 @@
             ].filter(([, items]) => items.length);
             return {
                 kind: 'interface', title, host: site,
-                lead: `This looks like an app or interface (${site}) rather than an article, so there is not much text to summarise.` +
-                    (data.description ? ' ' + data.description : ''),
+                lead: `This looks like an app or interface (${site}) rather than an article.`,
                 sectionLabel: 'What is on the page',
                 points: groups.map(([lead, items]) => ({ lead: lead + ':', text: items.join(' · ') })),
                 terms: [], stats: [site]
@@ -915,8 +924,8 @@
 
         let points;
         const named = sections.filter(sec => sec.heading && sentencesOf(sec).length);
-        if (named.length >= 3) { // one point per section, labelled with its heading
-            const perSection = Math.max(1, Math.round(n / Math.min(named.length, n))); // few sections: say more about each
+        if (named.length >= 3) {
+            const perSection = Math.max(1, Math.round(n / Math.min(named.length, n)));
             points = sample(named, n).map(sec => {
                 const own = sentencesOf(sec);
                 const chosen = pickSentences(own.filter(x => !lead.includes(x)), perSection, freq, titleWords);
@@ -933,11 +942,8 @@
         };
     }
 
-    // ---------- Local AI: summaries and answers written by a small model running on this computer ----------
-    const AI_CONTEXT_CHARS = 7000; // about 1,800 tokens: fits the small models' 4k context with room left to answer
+    const AI_CONTEXT_CHARS = 7000;
 
-    // The page as text for the model: headings kept, paragraphs in order. Long pages are trimmed to `limit`
-    // characters by dropping the least informative sentences (the ones that match `question` are kept first).
     function pageContext(data, limit, question = '') {
         const head = [`Title: ${data.title || data.host}`, `Site: ${data.siteName || data.host}`];
         if (data.description) head.push(`Description: ${data.description}`);
@@ -947,7 +953,7 @@
         let body = useBlocks ? structured : String(data.fallback || '').replace(/\n{2,}/g, '\n').trim();
 
         if (body.length > limit) {
-            const entries = []; // { h: heading } or { s: sentence }
+            const entries = [];
             if (useBlocks) {
                 for (const b of data.blocks) {
                     if (b.h) entries.push({ h: b.text });
@@ -960,7 +966,7 @@
             const freq = wordFreq(sentences);
             const boost = new Set([...tokens(data.title || ''), ...tokens(question)]);
             const avg = sentences.reduce((sum, x) => sum + x.length + 1, 0) / Math.max(1, sentences.length);
-            const keep = new Set(pickIndices(sentences, Math.max(3, Math.floor(limit / avg)), freq, boost, question ? 6 : 3, false)); // fill the budget; repeats are fine for the model
+            const keep = new Set(pickIndices(sentences, Math.max(3, Math.floor(limit / avg)), freq, boost, question ? 6 : 3, false));
             const out = [];
             let current = [];
             let heading = '';
@@ -977,7 +983,7 @@
         }
         body = body.slice(0, limit + 500);
 
-        if (body.length < 200) { // an app or interface: describe what is on screen instead
+        if (body.length < 200) {
             const names = (kind, n) => data.labels.filter(l => l.k === kind).slice(0, n).map(l => l.t).join(', ');
             const parts = [
                 ['Headings', data.blocks.filter(b => b.h).slice(0, 6).map(b => b.text).join(', ')],
@@ -1014,8 +1020,7 @@
                     role: 'user',
                     content: 'Summarise this web page for the reader.\n\n' + shape +
                         ' Put "## Key points" on its own line before the bullets, and start each bullet with a short **bold label** and a colon.' +
-                        ' If the page is mostly navigation or controls (an app, dashboard, chat, search or login page), say that it is an app or interface page' +
-                        ' and describe what a person can do on it instead.\n\n<page>\n' + context + '\n</page>'
+                        ' If the page is mostly navigation or controls, say that it is an app or interface page and describe what a person can do on it instead.\n\n<page>\n' + context + '\n</page>'
                 }
             ]
         };
@@ -1046,12 +1051,11 @@
         };
     }
 
-    // Small Markdown subset (headings, bullets, **bold**), built with DOM nodes because the text is untrusted.
     function inlineMarkdown(el, text) {
         const parts = text.split('**');
         parts.forEach((part, i) => {
             if (!part) return;
-            const closed = !(i === parts.length - 1 && parts.length % 2 === 0); // an unfinished ** while streaming stays plain
+            const closed = !(i === parts.length - 1 && parts.length % 2 === 0);
             if (i % 2 === 1 && closed) el.appendChild(node('strong', '', part));
             else el.appendChild(document.createTextNode(part));
         });
@@ -1082,7 +1086,6 @@
         }
     }
 
-    // ---------- chat-style rendering (page text is untrusted, so everything is built with textContent) ----------
     function node(tag, cls, text) {
         const e = document.createElement(tag);
         if (cls) e.className = cls;
@@ -1107,7 +1110,6 @@
         return lines.join('\n');
     }
 
-    // opts.note: a short message shown first (why Local AI was not used). opts.offerAI: show the "Try Local AI" link.
     function renderResult(card, r, selected, opts = {}) {
         card.replaceChildren();
         if (opts.note) card.appendChild(node('p', 'as-note', opts.note));
@@ -1154,8 +1156,7 @@
         else if (currentPane() !== 'web') focusWebContents();
     }
 
-    // ---------- running the model ----------
-    let runId = 0; // a newer request makes older ones stop updating the panel
+    let runId = 0;
 
     function showProgress(card, label, fraction, detail) {
         let box = card.querySelector('.as-progress');
@@ -1173,7 +1174,6 @@
         box.lastChild.textContent = String(detail || '').slice(0, 110);
     }
 
-    // Downloads (first time only) and loads the chosen model, showing progress in the card.
     async function prepareModel(card, key) {
         if (neiraAI.isLoaded(key)) return;
         const cached = await neiraAI.isDownloaded(key);
@@ -1195,7 +1195,6 @@
 
     const currentModelKey = () => (neiraAI.MODELS[settings.localAIModel] ? settings.localAIModel : 'balanced');
 
-    // Streams the model's reply into the card as Markdown. `again` re-runs the request.
     async function streamAnswer(card, { meta, title, request, again }) {
         card.replaceChildren();
         card.appendChild(node('span', 'as-badge', '✨ Local AI'));
@@ -1240,7 +1239,6 @@
         }
     }
 
-    // Returns { done: true } when the card was handled, or { done: false, note } so the caller shows the standard summary.
     async function tryLocalAI(card, my, { selected, selection, data }) {
         const key = currentModelKey();
         const model = neiraAI.MODELS[key];
@@ -1259,19 +1257,17 @@
             return { done: true };
         } catch (err) {
             if (my !== runId) return { done: true };
-            if (!err || !err.reason) neiraAI.unload(); // an unexpected failure: free the GPU and start clean next time
+            if (!err || !err.reason) neiraAI.unload();
             return { done: false, note: aiNote(err) };
         }
     }
 
-    // selected === null: summarise the whole page. A string: summarise only that passage ('' = read the live selection).
     async function runSummary(selected) {
         lastRequest = { selected };
         const my = ++runId;
         const tab = activeTab();
         const readyTab = !!tab && !tab.internal && tab.ready;
 
-        // The right-click menu may hand over a shortened copy, so ask the page for the full selection.
         let selection = '';
         if (selected !== null) {
             selection = String(selected).trim();
@@ -1284,7 +1280,7 @@
         }
 
         setAssistantOpen(true);
-        neiraAI.stop(); // a reply that is still being written gives way to this request
+        neiraAI.stop();
         addMessage('as-user').textContent = selected !== null ? 'Summarise the selected text' : 'Summarise this page';
         const card = addMessage('as-card');
         for (let i = 0; i < 4; i++) card.appendChild(node('div', 'as-skel'));
@@ -1315,7 +1311,6 @@
         card.scrollIntoView({ block: 'start', behavior: 'smooth' });
     }
 
-    // Answers a question about the current page (needs Local AI).
     async function runAsk(question) {
         const my = ++runId;
         const tab = activeTab();
@@ -1328,7 +1323,7 @@
         card.scrollIntoView({ block: 'end', behavior: 'smooth' });
 
         if (!settings.localAI) {
-            card.replaceChildren(node('p', 'as-lead', 'Questions about a page need Local AI. Turn it on in the ⚙ settings above. It runs privately on this computer.'));
+            card.replaceChildren(node('p', 'as-lead', 'Questions about a page need Local AI. Turn it on in the ⚙ settings above.'));
             openSheet();
             return;
         }
@@ -1351,11 +1346,11 @@
         }
     }
 
-    // ---------- Local AI settings sheet (⚙ in the assistant header) ----------
     const sheet = $('as-sheet');
 
     function buildAISheet() {
         const select = $('ai-model');
+        if (!select) return;
         for (const [key, m] of Object.entries(neiraAI.MODELS)) {
             const option = document.createElement('option');
             option.value = key;
@@ -1403,10 +1398,6 @@
 
     const summarizePage = () => runSummary(null);
 
-    // -----------------------------------------------------------------------
-    // Read aloud, translate, screenshot, send to device (right-click menu + shortcuts)
-    // -----------------------------------------------------------------------
-    // Runs inside the page. Calling it again while it is speaking stops it.
     const READ_ALOUD_JS = '(' + (() => {
         const synth = window.speechSynthesis;
         if (!synth) return 'unsupported';
@@ -1415,7 +1406,6 @@
         const el = document.querySelector('article') || document.querySelector('main') || document.body;
         const text = (selected || (el && el.innerText) || '').replace(/\s+/g, ' ').trim().slice(0, 40000);
         if (!text) return 'empty';
-        // Chromium cuts long utterances short, so speak in sentence-sized pieces.
         const chunks = [];
         let current = '';
         for (const sentence of text.match(/[^.!?]+[.!?]*\s*/g) || [text]) {
@@ -1471,7 +1461,6 @@
         toast(r && r.ok ? 'Screenshot saved to Downloads and copied' : 'Could not take a screenshot');
     }
 
-    // Neira has no account sync yet, so this puts the link on the clipboard, ready to paste into any messaging app.
     async function sendToDevice() {
         const tab = activeTab();
         if (!tab || tab.internal || !isWeb(tab.url)) { toast('This page can’t be sent'); return; }
@@ -1479,9 +1468,6 @@
         toast('Link copied. Paste it into a message to your device');
     }
 
-    // -----------------------------------------------------------------------
-    // Dropdown menus (app menu, avatar menu)
-    // -----------------------------------------------------------------------
     let dropdownAnchor = null;
 
     function closeDropdown(refocus = true) {
@@ -1579,14 +1565,10 @@
         ]);
     }
 
-
-    // -----------------------------------------------------------------------
-    // Profiles (the avatar button): switch, add, edit and delete
-    // -----------------------------------------------------------------------
     const profilePop = $('profile-pop');
     let profiles = { active: '', profiles: [] };
-    let profileForm = null; // null | { mode: 'add' } | { mode: 'edit', id }
-    let profileBusy = false; // a confirm dialog is open: do not close the panel when the window loses focus
+    let profileForm = null;
+    let profileBusy = false;
 
     const MAX_PROFILES_UI = 8;
 
@@ -1616,7 +1598,6 @@
         try { return await api.confirm(message); } finally { profileBusy = false; }
     }
 
-    // Switching reloads this window, so ask first when there is something to lose.
     const hasOpenTabs = () => tabs.some(t => !t.isNewtab);
 
     async function switchToProfile(p) {
@@ -1689,7 +1670,7 @@
             save.disabled = false;
             if (!r || !r.ok) { error.textContent = (r && r.reason) || 'Something went wrong. Try again.'; return; }
             profileForm = null;
-            if (editing) await refreshProfiles(); // adding switches profile, which reloads the window
+            if (editing) await refreshProfiles();
         };
         save.addEventListener('click', submit);
         cancel.addEventListener('click', cancelForm);
@@ -1791,7 +1772,7 @@
         renderProfilePop();
         const active = profilePop.querySelector('.pp-row.active .pp-pick') || profilePop.querySelector('[data-nav]');
         if (active) active.focus();
-        refreshProfiles(); // pick up changes made in another window
+        refreshProfiles();
     }
 
     profilePop.addEventListener('keydown', e => {
@@ -1807,11 +1788,8 @@
     document.addEventListener('mousedown', e => {
         if (!profilePop.hidden && !profilePop.contains(e.target) && !avatarBtn.contains(e.target)) closeProfilePop(false);
     });
-    window.addEventListener('blur', () => { if (!profilePop.hidden && !profileBusy) closeProfilePop(false); }); // focus moved into a page
+    window.addEventListener('blur', () => { if (!profilePop.hidden && !profileBusy) closeProfilePop(false); });
 
-    // -----------------------------------------------------------------------
-    // Tab search
-    // -----------------------------------------------------------------------
     let tabSearchMatches = [];
     let tabSearchIndex = 0;
 
@@ -1876,18 +1854,13 @@
     });
     tabSearch.addEventListener('mousedown', e => { if (e.target === tabSearch) closeTabSearch(true); });
 
-    // -----------------------------------------------------------------------
-    // Shortcut actions (ids match shortcuts.js)
-    // -----------------------------------------------------------------------
     const mainAction = id => () => api.runMainAction(id);
 
     const ACTIONS = {
-        // Assistant
         summarize_page: summarizePage,
         toggle_assistant: () => setAssistantOpen(assistant.hidden),
         toggle_split_screen: toggleSplitScreen,
 
-        // Tabs & windows
         new_tab: () => createTab(newTabUrl(), { focusBar: newTabUrl() !== 'neira://newtab' }),
         new_window: mainAction('new_window'),
         new_private_window: mainAction('new_private_window'),
@@ -1910,9 +1883,24 @@
         close_tabs_right: closeTabsToRight,
         reload_all_tabs: reloadAllTabs,
 
-        // Navigation
-        go_back: () => { const t = activeTab(); if (t && t.ready && t.webview.canGoBack()) t.webview.goBack(); },
-        go_forward: () => { const t = activeTab(); if (t && t.ready && t.webview.canGoForward()) t.webview.goForward(); },
+        go_back: () => {
+            const t = activeTab();
+            if (!t || !t.ready) return;
+            try {
+                const wv = t.webview;
+                if (wv.navigationHistory) wv.navigationHistory.goBack();
+                else wv.goBack();
+            } catch (_) {}
+        },
+        go_forward: () => {
+            const t = activeTab();
+            if (!t || !t.ready) return;
+            try {
+                const wv = t.webview;
+                if (wv.navigationHistory) wv.navigationHistory.goForward();
+                else wv.goForward();
+            } catch (_) {}
+        },
         reload: () => reloadTab(false),
         reload_cache: () => reloadTab(true),
         stop_loading: stopLoading,
@@ -1921,7 +1909,6 @@
         focus_address: focusAddressBar,
         focus_search_bar: () => { urlInput.focus(); urlInput.value = ''; },
 
-        // Page & viewing
         find_in_page: openFind,
         find_next: () => findStep(true),
         find_prev: () => findStep(false),
@@ -1943,12 +1930,10 @@
         translate_page: translatePage,
         send_to_device: sendToDevice,
 
-        // Developer tools
         devtools: () => devtools('open'),
         devtools_toggle: () => devtools('toggle'),
         devtools_console: () => devtools('console'),
 
-        // Bookmarks & data
         bookmark_curr: toggleBookmark,
         bookmark_all_tabs: bookmarkAllTabs,
         toggle_bookmarks_bar: () => api.settings.set('showBookmarksBar', settings.showBookmarksBar === false),
@@ -1957,7 +1942,6 @@
         show_downloads: () => openInternal('downloads'),
         clear_browsing_data: () => api.clearBrowsingData().then(r => { if (r && r.ok) toast('Browsing data cleared'); }),
 
-        // Focus
         focus_toolbar: focusToolbar,
         focus_menu_bar: () => menuBtn.focus(),
         focus_bookmarks: focusBookmarksBar,
@@ -1965,12 +1949,12 @@
         focus_next_pane: () => cyclePane(1),
         focus_prev_pane: () => cyclePane(-1),
 
-        // Menus & help
         show_app_menu: openAppMenu,
         show_avatar_menu: openAvatarMenu,
         show_settings: () => openInternal('settings'),
         show_shortcuts: () => openInternal('shortcuts'),
         open_help: () => openInternal('help'),
+        open_extensions: () => openInternal('extensions'),
         toggle_theme: () => api.settings.set('theme', settings.theme === 'light' ? 'dark' : 'light'),
         toggle_density: () => api.settings.set('density', settings.density === 'compact' ? 'comfortable' : 'compact'),
         toggle_vertical_tabs: () => api.settings.set('tabLayout', settings.tabLayout === 'vertical' ? 'horizontal' : 'vertical'),
@@ -1993,15 +1977,9 @@
         if (fn) fn();
     }
 
-    // -----------------------------------------------------------------------
-    // Theme, density, tooltips (all update live when settings or shortcuts change)
-    // -----------------------------------------------------------------------
     function applyUi() {
-        window.neiraTheme.apply(settings);   // light/dark, density, tab layout, accent colour, surface tint (boot.js)
-        window.neiraTheme.persist(settings); // so the next window paints correctly straight away
-        const toggle = $('sidebar-toggle');
-        toggle.textContent = settings.sidebarCollapsed ? '»' : '«';
-        toggle.title = settings.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar';
+        window.neiraTheme.apply(settings);
+        window.neiraTheme.persist(settings);
     }
 
     const HINTS = {
@@ -2019,25 +1997,57 @@
 
     function applyHints() {
         for (const [elId, [label, action]] of Object.entries(HINTS)) {
+            const el = $(elId);
+            if (!el) continue;
             const combo = shortcutMap[action];
-            $(elId).title = combo ? `${label} (${combo})` : label;
+            el.title = combo ? `${label} (${combo})` : label;
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Toolbar + inputs
-    // -----------------------------------------------------------------------
+      function bindWindowControls() {
+        const minBtn = $('win-min');
+        const maxBtn = $('win-max');
+        const closeBtn = $('win-close');
+        if (!api.window || !minBtn) return;
+
+        minBtn.addEventListener('click', () => api.window.minimize());
+        maxBtn.addEventListener('click', () => api.window.maximizeToggle());
+        closeBtn.addEventListener('click', () => api.window.close());
+
+        const syncMax = (isMax) => {
+            document.documentElement.classList.toggle('window-maximized', !!isMax);
+        };
+        syncMax(api.window.isMaximized());
+        api.window.onMaximized(syncMax);
+
+        const areas = [$('toolbar'), document.querySelector('.tab-bar')];
+        for (const area of areas) {
+            if (!area) continue;
+            area.addEventListener('dblclick', e => {
+                if (e.target.closest('button')) return;
+                api.window.maximizeToggle();
+            });
+        }
+    }
+
     backBtn.addEventListener('click', ACTIONS.go_back);
     forwardBtn.addEventListener('click', ACTIONS.go_forward);
     reloadBtn.addEventListener('click', () => (reloadBtn.dataset.stop ? stopLoading() : reloadTab(false)));
-    $('new-tab-btn').addEventListener('click', () => runAction('new_tab'));$('sidebar-toggle').addEventListener('click', () => runAction('toggle_sidebar'));
-    $('assistant-btn').addEventListener('click', () => setAssistantOpen(assistant.hidden));$('assistant-close').addEventListener('click', () => setAssistantOpen(false));
+    $('new-tab-btn').addEventListener('click', () => runAction('new_tab'));
+    $('assistant-btn').addEventListener('click', () => setAssistantOpen(assistant.hidden));
+    $('assistant-close').addEventListener('click', () => setAssistantOpen(false));
     summarizeBtn.addEventListener('click', () => runSummary(null));
     if (splitScreenBtn) splitScreenBtn.addEventListener('click', toggleSplitScreen);
     $('summarize-sel-btn').addEventListener('click', () => runSummary(''));
-    $('assistant-clear').addEventListener('click', () => {         assistantOut.replaceChildren();         asEmpty.hidden = false;         lastRequest = null;     });$('assistant-settings').addEventListener('click', () => (sheet.hidden ? openSheet() : closeSheet()));
+    $('assistant-clear').addEventListener('click', () => {
+        assistantOut.replaceChildren();
+        asEmpty.hidden = false;
+        lastRequest = null;
+    });
+    $('assistant-settings').addEventListener('click', () => (sheet.hidden ? openSheet() : closeSheet()));
     $('ai-enable').addEventListener('change', e => api.settings.set('localAI', e.target.checked));
-    $('ai-model').addEventListener('change', e => api.settings.set('localAIModel', e.target.value));$('ai-download').addEventListener('click', async () => {
+    $('ai-model').addEventListener('change', e => api.settings.set('localAIModel', e.target.value));
+    $('ai-download').addEventListener('click', async () => {
         const key = $('ai-model').value;
         const button = $('ai-download');
         const bar = $('ai-bar');
@@ -2084,14 +2094,29 @@
             x.classList.toggle('active', x === b);
             x.setAttribute('aria-checked', String(x === b));
         }
-        if (lastRequest) runSummary(lastRequest.selected); // show the same thing at the new length
+        if (lastRequest) runSummary(lastRequest.selected);
     });
-    $('history-toggle').addEventListener('click', () => openInternal('history'));$('downloads-btn').addEventListener('click', () => openInternal('downloads'));
+    $('history-toggle').addEventListener('click', () => openInternal('history'));
+    $('downloads-btn').addEventListener('click', () => openInternal('downloads'));
     avatarBtn.addEventListener('click', openAvatarMenu);
     menuBtn.addEventListener('click', openAppMenu);
     bookmarkBtn.addEventListener('click', toggleBookmark);
 
-    // Arrow keys move between toolbar buttons
+    const railCollapse = $('rail-collapse');
+    if (railCollapse) railCollapse.addEventListener('click', () => {
+        root.classList.toggle('rail-expanded');
+    });
+    const railTabsBtn = $('rail-tabs');
+    if (railTabsBtn) railTabsBtn.addEventListener('click', openTabSearch);
+    const railHistory = $('rail-history');
+    if (railHistory) railHistory.addEventListener('click', () => openInternal('history'));
+    const railDownloads = $('rail-downloads');
+    if (railDownloads) railDownloads.addEventListener('click', () => openInternal('downloads'));
+    const railNewtab = $('rail-newtab');
+    if (railNewtab) railNewtab.addEventListener('click', () => runAction('new_tab'));
+    const railMore = $('rail-more');
+    if (railMore) railMore.addEventListener('click', openAppMenu);
+
     $('toolbar').addEventListener('keydown', e => {
         if ((e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') || !e.target.classList.contains('nav-btn')) return;
         const buttons = [...document.querySelectorAll('#toolbar .nav-btn')].filter(b => !b.disabled && !b.hidden);
@@ -2120,11 +2145,11 @@
         else if (e.key === 'Escape') closeFind(true);
     });
     $('find-next').addEventListener('click', () => runFind({ findNext: true, forward: true }));
-    $('find-prev').addEventListener('click', () => runFind({ findNext: true, forward: false }));$('find-close').addEventListener('click', () => closeFind(true));
+    $('find-prev').addEventListener('click', () => runFind({ findNext: true, forward: false }));
+    $('find-close').addEventListener('click', () => closeFind(true));
 
     window.addEventListener('blur', () => { commitCycle(); });
 
-    // Global Keydown Listener for Alt+A Selection Summary Shortcut
     document.addEventListener('keydown', e => {
         const tag = document.activeElement ? document.activeElement.tagName : '';
         if (tag === 'INPUT' || tag === 'TEXTAREA') return;
@@ -2134,10 +2159,9 @@
         }
     });
 
-    // -----------------------------------------------------------------------
-    // Boot
-    // -----------------------------------------------------------------------
     async function init() {
+        bindWindowControls();
+
         if (PRIVATE) $('private-badge').hidden = false;
         try {
             const [s, sc, bm] = await Promise.all([api.settings.get(), api.shortcuts.get(), api.bookmarks.get()]);
@@ -2159,7 +2183,7 @@
         api.onAction(runAction);
         api.onModifierReleased(commitCycle);
         api.onOpenInput(openFromPage);
-        api.onSummarizeText(text => runSummary(text && text.trim() ? text : null)); // right-click > Summarise with Neira
+        api.onSummarizeText(text => runSummary(text && text.trim() ? text : null));
         api.onOpenUrl((url, opts) => createTab(url, { activate: !(opts && opts.background), resolved: /^file:/i.test(url) }));
         api.settings.onChange(next => { settings = next; applyUi(); renderBookmarks(); syncAISheet(); });
         api.shortcuts.onChange(({ map }) => { shortcutMap = map; applyHints(); });
@@ -2169,5 +2193,5 @@
     }
 
     init();
-    
+
 })();

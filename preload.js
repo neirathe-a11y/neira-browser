@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const invoke = (channel, ...args) => ipcRenderer.invoke(channel, ...args);
 const send = (channel, ...args) => ipcRenderer.send(channel, ...args);
+const sendSync = (channel, ...args) => ipcRenderer.sendSync(channel, ...args);
 
 const on = channel => callback => {
     const handler = (_event, ...args) => callback(...args);
@@ -18,6 +19,16 @@ contextBridge.exposeInMainWorld('neira', {
     savePage: webContentsId => invoke('page:save', webContentsId),
     clearBrowsingData: () => invoke('browsing:clear'),
     devtools: { showConsole: webContentsId => invoke('devtools:console', webContentsId) },
+
+         window: {
+        minimize: () => send('window:minimize'),
+        maximizeToggle: () => send('window:maximize-toggle'),
+        close: () => send('window:close'),
+        dragStart: () => send('window:drag-start'),
+        dragStop: () => send('window:drag-stop'),
+        isMaximized: () => sendSync('window:is-maximized'),
+        onMaximized: on('window:maximized')
+    },
 
     onAction: on('shortcut:action'),
     onOpenUrl: on('open-url'),
@@ -123,5 +134,7 @@ contextBridge.exposeInMainWorld('neira', {
         remove: id => invoke('extensions:remove', id),
         setEnabled: (id, enabled) => invoke('extensions:set-enabled', id, enabled),
         onChange: on('extensions:changed')
+        
     }
+    
 });

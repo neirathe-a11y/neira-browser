@@ -1,10 +1,11 @@
 'use strict';
 
 const {
-    app, BrowserWindow, ipcMain, Menu, session, shell, dialog, clipboard, safeStorage, webContents, protocol
+    app, BrowserWindow, ipcMain, Menu, session, shell, dialog, clipboard, safeStorage, webContents, protocol, screen
 } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { initialize, trackEvent } = require('@aptabase/electron/main');
+    
 
 initialize('A-EU-3606599135');
 
@@ -305,7 +306,6 @@ function parentalCheck(rawUrl) {
         const limitMinutes = store.data.parental.categories[cat].minutes;
         const limit = limitMinutes * 60;
         const used = usageToday()[cat] || 0;
-        // 0 minutes means "block the whole category".
         if (limitMinutes === 0 || used >= limit) {
             const reason = limitMinutes === 0
                 ? `${store.data.parental.categories[cat].label} is blocked.`
@@ -556,6 +556,8 @@ function createWindow({ isPrivate = false } = {}) {
         height: 800,
         minWidth: 640,
         minHeight: 420,
+        frame: false,
+        titleBarStyle: 'hidden',
         title: isPrivate ? 'Neira Browser (Private)' : 'Neira Browser',
         backgroundColor: isPrivate ? '#2b2140' : (light ? '#e8e8e8' : '#1f1f1f'),
         webPreferences: {
@@ -570,10 +572,14 @@ function createWindow({ isPrivate = false } = {}) {
     windows.add(info);
 
     win.loadFile('index.html', isPrivate ? { query: { private: '1' } } : undefined);
+
     const wc = win.webContents;
     wc.setWindowOpenHandler(() => ({ action: 'deny' }));
     wc.on('will-navigate', e => e.preventDefault());
     wc.on('did-attach-webview', (_e, guest) => setupGuest(info, guest));
+
+    win.on('maximize', () => { if (!win.isDestroyed()) win.webContents.send('window:maximized', true); });
+    win.on('unmaximize', () => { if (!win.isDestroyed()) win.webContents.send('window:maximized', false); });
 
     win.on('closed', () => {
         windows.delete(info);
@@ -618,16 +624,12 @@ function setupGuest(info, wc) {
     wc.on('will-navigate', enforceParental);
     wc.on('will-redirect', enforceParental);
 
-    // did-start-navigation fires for ALL navigations, including programmatic
-    // ones triggered by webview.loadURL() / webview.src = ... from the host.
-    // That's the path the address bar uses, and it's why typing youtube.com
-    // wasn't being blocked before.
     let lastRedirectedTo = null;
     wc.on('did-start-navigation', (_ev, url, isInPlace, isMainFrame) => {
         if (!isMainFrame || isInPlace) return;
         if (!parentalEnabled()) return;
         if (!/^https?:/i.test(url)) return;
-        if (url === lastRedirectedTo) return;   // don't loop on the block page
+        if (url === lastRedirectedTo) return;
         const redirect = parentalCheck(url);
         if (redirect) {
             lastRedirectedTo = redirect;
@@ -635,6 +637,7 @@ function setupGuest(info, wc) {
             try { wc.loadURL(redirect).catch(() => {}); } catch (_) {}
         }
     });
+
     wc.setWindowOpenHandler(({ url }) => {
         if (parentalEnabled()) {
             const redirect = parentalCheck(url);
@@ -871,6 +874,7 @@ function setupSession(ses, isPrivate = false) {
         if (!isPrivate && origin && checkboxChecked) {
             remembered[key] = allow;
             store.save();
+            broadcast('permissions:changed', null);
         }
         callback(allow);
     });
@@ -1042,6 +1046,48 @@ function registerIpc() {
 
     listen('action:run', (event, id) => {
         if (MAIN_ACTIONS.has(id)) runAction(infoFromContents(event.sender), id);
+    });
+
+             listen('window:minimize', (event) => {
+        const info = infoFromContents(event.sender);
+        if (!info || info.win.isDestroyed()) return;
+        setImmediate(() => {
+            if (!info.win.isDestroyed()) info.win.minimize();
+        });
+    
+    });
+       listen('window:maximize-toggle', (event) => {
+        const info = infoFromContents(event.sender);
+        if (!info || info.win.isDestroyed()) return;
+        setImmediate(() => {
+            if (info.win.isDestroyed()) return;
+            if (info.win.isMaximized()) info.win.unmaximize();
+            else info.win.maximize();
+        });
+    });
+    listen('window:close', (event) => {
+        const info = infoFromContents(event.sender);
+        if (info && !info.win.isDestroyed()) info.win.close();
+    });
+        let dragTimer = null;
+    listen('window:drag-start', event => {
+        const info = infoFromContents(event.sender);
+        if (!info || info.win.isDestroyed() || info.win.isMaximized() || info.win.isFullScreen()) return;
+        clearInterval(dragTimer);
+        const win = info.win;
+        const start = screen.getCursorScreenPoint();
+        const b = win.getBounds();
+        dragTimer = setInterval(() => {
+            if (win.isDestroyed()) { clearInterval(dragTimer); dragTimer = null; return; }
+            const p = screen.getCursorScreenPoint();
+            win.setBounds({ x: b.x + p.x - start.x, y: b.y + p.y - start.y, width: b.width, height: b.height });
+        }, 8);
+    });
+    listen('window:drag-stop', () => { clearInterval(dragTimer); dragTimer = null; });
+    ipcMain.on('window:is-maximized', (event) => {
+        if (!isInternalUrl(event.sender.getURL())) { event.returnValue = false; return; }
+        const info = infoFromContents(event.sender);
+        event.returnValue = !!(info && !info.win.isDestroyed() && info.win.isMaximized());
     });
 
     handle('settings:get', () => store.data.settings);
@@ -1388,9 +1434,53 @@ function registerIpc() {
         const i = key.lastIndexOf('|');
         return { origin: key.slice(0, i), permission: key.slice(i + 1), allow };
     }));
+
+    handle('permissions:listDetailed', () => {
+        const raw = store.data.permissions;
+        const byOrigin = new Map();
+        for (const [key, allow] of Object.entries(raw)) {
+            const i = key.lastIndexOf('|');
+            const origin = key.slice(0, i);
+            const permission = key.slice(i + 1);
+            if (!byOrigin.has(origin)) byOrigin.set(origin, { origin, perms: [], host: origin });
+            byOrigin.get(origin).perms.push({ permission, allow });
+        }
+        const rows = [...byOrigin.values()].sort((a, b) => a.origin.localeCompare(b.origin));
+        for (const row of rows) row.perms.sort((a, b) => a.permission.localeCompare(b.permission));
+        return rows;
+    });
+
+    handle('permissions:setFor', (_e, origin, permission, allow) => {
+        if (typeof origin !== 'string' || typeof permission !== 'string') return { ok: false };
+        if (!['media', 'notifications', 'geolocation'].includes(permission)) return { ok: false };
+        const key = origin + '|' + permission;
+        store.data.permissions[key] = !!allow;
+        store.save();
+        broadcast('permissions:changed', null);
+        return { ok: true };
+    });
+
+    handle('permissions:removeFor', (_e, origin, permission) => {
+        const key = origin + '|' + permission;
+        delete store.data.permissions[key];
+        store.save();
+        broadcast('permissions:changed', null);
+        return { ok: true };
+    });
+
+    handle('permissions:removeOrigin', (_e, origin) => {
+        for (const key of Object.keys(store.data.permissions)) {
+            if (key.startsWith(origin + '|')) delete store.data.permissions[key];
+        }
+        store.save();
+        broadcast('permissions:changed', null);
+        return { ok: true };
+    });
+
     handle('permissions:clear', () => {
         store.data.permissions = {};
         store.save();
+        broadcast('permissions:changed', null);
     });
 
     handle('clipboard:write', (_e, text) => { clipboard.writeText(String(text).slice(0, 10000)); });
@@ -1676,6 +1766,43 @@ function registerIpc() {
         store.data.parental.blocked = [];
         store.save();
         return { ok: true };
+    });
+
+    handle('extensions:load', async event => {
+        const win = parentOf(event);
+        const { canceled, filePaths } = await (win
+            ? dialog.showOpenDialog(win, { properties: ['openDirectory'] })
+            : dialog.showOpenDialog({ properties: ['openDirectory'] }));
+        if (canceled || !filePaths[0]) return { ok: false, cancelled: true };
+        const dir = filePaths[0];
+        let manifest;
+        try {
+            manifest = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
+        } catch (_) {
+            return { ok: false, reason: 'That folder does not contain a valid manifest.json.' };
+        }
+        const main = manifest.main || manifest.content_script || manifest.script;
+        if (!main) return { ok: false, reason: 'The manifest.json is missing a "main" script.' };
+        let code;
+        try {
+            code = fs.readFileSync(path.join(dir, main), 'utf8');
+        } catch (_) {
+            return { ok: false, reason: `Could not read ${main}.` };
+        }
+        if (code.length > 512 * 1024) return { ok: false, reason: 'That extension is too large (limit 512 KB).' };
+        return {
+            ok: true,
+            extension: {
+                id: crypto.randomUUID(),
+                name: String(manifest.name || path.basename(dir)).slice(0, 60),
+                version: String(manifest.version || '1.0.0').slice(0, 20),
+                description: String(manifest.description || '').slice(0, 200),
+                icon: typeof manifest.icon === 'string' ? manifest.icon.slice(0, 4) : '🧩',
+                code,
+                enabled: true,
+                shortcuts: manifest.shortcuts && typeof manifest.shortcuts === 'object' ? manifest.shortcuts : {}
+            }
+        };
     });
 }
 
