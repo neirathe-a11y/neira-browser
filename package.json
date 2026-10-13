@@ -1,7 +1,8 @@
 {
   "name": "neira-browser",
-  "version": "1.0.12",
+  "version": "1.0.13",
   "description": "A custom desktop browser",
+  "author": "Neira",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -33,11 +34,13 @@
       ],
       "artifactName": "Neira-Installer.dmg"
     },
-    "publish": {
-      "provider": "github",
-      "owner": "neirathe-a11y",
-      "repo": "neira-browser"
-    }
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "neira-the-a11y",
+        "repo": "neira-browser"
+      }
+    ]
   },
   "allowScripts": [
     "electron"
