@@ -1,6 +1,6 @@
 {
   "name": "neira-browser",
-  "version": "1.0.13",
+  "version": "1.0.14",
   "description": "A custom desktop browser",
   "author": "Neira",
   "main": "main.js",
@@ -37,7 +37,7 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "neira-the-a11y",
+        "owner": "neirathe-a11y",
         "repo": "neira-browser"
       }
     ]
