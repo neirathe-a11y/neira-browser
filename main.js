@@ -5,7 +5,6 @@ const {
 } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { initialize, trackEvent } = require('@aptabase/electron/main');
-    
 
 initialize('A-EU-3606599135');
 
@@ -557,7 +556,6 @@ function createWindow({ isPrivate = false } = {}) {
         minWidth: 640,
         minHeight: 420,
         frame: false,
-        titleBarStyle: 'hidden',
         title: isPrivate ? 'Neira Browser (Private)' : 'Neira Browser',
         backgroundColor: isPrivate ? '#2b2140' : (light ? '#e8e8e8' : '#1f1f1f'),
         webPreferences: {
@@ -570,6 +568,7 @@ function createWindow({ isPrivate = false } = {}) {
     });
     const info = { win, isPrivate, partitions: new Set() };
     windows.add(info);
+    win.maximize();
 
     win.loadFile('index.html', isPrivate ? { query: { private: '1' } } : undefined);
 
@@ -1045,31 +1044,29 @@ function registerIpc() {
     listen('shortcuts:record-stop', () => stopRecording());
 
     listen('action:run', (event, id) => {
-        if (MAIN_ACTIONS.has(id)) runAction(infoFromContents(event.sender), id);
+        const TAB_MENU_ACTIONS = new Set(['new_tab', 'duplicate_tab']);
+        if (MAIN_ACTIONS.has(id) || TAB_MENU_ACTIONS.has(id)) runAction(infoFromContents(event.sender), id);
     });
 
-             listen('window:minimize', (event) => {
+    // ----- Window controls -----
+    listen('window:minimize', event => {
+        const info = infoFromContents(event.sender);
+        if (info && !info.win.isDestroyed()) info.win.minimize();
+    });
+
+    listen('window:maximize-toggle', event => {
         const info = infoFromContents(event.sender);
         if (!info || info.win.isDestroyed()) return;
-        setImmediate(() => {
-            if (!info.win.isDestroyed()) info.win.minimize();
-        });
-    
+        if (info.win.isMaximized()) info.win.unmaximize();
+        else info.win.maximize();
     });
-       listen('window:maximize-toggle', (event) => {
-        const info = infoFromContents(event.sender);
-        if (!info || info.win.isDestroyed()) return;
-        setImmediate(() => {
-            if (info.win.isDestroyed()) return;
-            if (info.win.isMaximized()) info.win.unmaximize();
-            else info.win.maximize();
-        });
-    });
-    listen('window:close', (event) => {
+
+    listen('window:close', event => {
         const info = infoFromContents(event.sender);
         if (info && !info.win.isDestroyed()) info.win.close();
     });
-        let dragTimer = null;
+
+    let dragTimer = null;
     listen('window:drag-start', event => {
         const info = infoFromContents(event.sender);
         if (!info || info.win.isDestroyed() || info.win.isMaximized() || info.win.isFullScreen()) return;
@@ -1084,7 +1081,15 @@ function registerIpc() {
         }, 8);
     });
     listen('window:drag-stop', () => { clearInterval(dragTimer); dragTimer = null; });
-    ipcMain.on('window:is-maximized', (event) => {
+
+    listen('window:open-url', (event, url) => {
+        if (typeof url !== 'string' || !/^https?:/i.test(url)) return;
+        const from = infoFromContents(event.sender);
+        const created = createWindow({ isPrivate: !!(from && from.isPrivate) });
+        created.win.webContents.once('did-finish-load', () => sendTo(created, 'open-url', url, {}));
+    });
+
+    ipcMain.on('window:is-maximized', event => {
         if (!isInternalUrl(event.sender.getURL())) { event.returnValue = false; return; }
         const info = infoFromContents(event.sender);
         event.returnValue = !!(info && !info.win.isDestroyed() && info.win.isMaximized());

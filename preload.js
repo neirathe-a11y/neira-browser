@@ -20,12 +20,13 @@ contextBridge.exposeInMainWorld('neira', {
     clearBrowsingData: () => invoke('browsing:clear'),
     devtools: { showConsole: webContentsId => invoke('devtools:console', webContentsId) },
 
-         window: {
+    window: {
         minimize: () => send('window:minimize'),
         maximizeToggle: () => send('window:maximize-toggle'),
         close: () => send('window:close'),
         dragStart: () => send('window:drag-start'),
         dragStop: () => send('window:drag-stop'),
+        openUrl: url => send('window:open-url', url),
         isMaximized: () => sendSync('window:is-maximized'),
         onMaximized: on('window:maximized')
     },
@@ -134,7 +135,5 @@ contextBridge.exposeInMainWorld('neira', {
         remove: id => invoke('extensions:remove', id),
         setEnabled: (id, enabled) => invoke('extensions:set-enabled', id, enabled),
         onChange: on('extensions:changed')
-        
     }
-    
 });
