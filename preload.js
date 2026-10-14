@@ -15,6 +15,9 @@ contextBridge.exposeInMainWorld('neira', {
     confirm: message => invoke('dialog:confirm', message),
     copy: text => invoke('clipboard:write', text),
 
+        onPageContextMenu: (cb) =>
+        ipcRenderer.on('page-context-menu', (_e, payload) => cb(payload)),
+        
     runMainAction: id => send('action:run', id),
     savePage: webContentsId => invoke('page:save', webContentsId),
     clearBrowsingData: () => invoke('browsing:clear'),

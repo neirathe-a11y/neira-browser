@@ -9,7 +9,7 @@
     <script src="boot.js"></script>
     <style>
         :root {
-            --accent: #8b5cf6;               /* replaced by the user's accent colour (boot.js) */
+            --accent: #8b5cf6;
             --on-accent: #ffffff;
             --accent-hover: color-mix(in srgb, var(--accent), #000 18%);
             --panel: color-mix(in srgb, var(--accent) 10%, rgba(12, 10, 20, 0.72));
@@ -150,94 +150,446 @@
 
         .toast { position: fixed; bottom: 22px; left: 50%; transform: translate(-50%, 12px); background: var(--panel-solid); border: 1px solid var(--line); padding: 9px 18px; border-radius: 20px; font-size: 13px; opacity: 0; pointer-events: none; transition: opacity 0.15s, transform 0.15s; z-index: 80; }
         .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+        /* =====================================================================
+           INCOGNITO LANDING PAGE  (private mode only)
+           Completely separate look from the normal new tab.
+           ===================================================================== */
+        #incognito { display: none; }
+        :root.private #incognito { display: flex; }
+        :root.private #normal { display: none; }
+
+        #incognito {
+            position: fixed;
+            inset: 0;
+            z-index: 2;
+            flex-direction: row;
+            align-items: center;
+            justify-content: center;
+            gap: 96px;
+            padding: 0 8vw;
+            color: #e8e6f0;
+            background:
+                radial-gradient(circle at 15% 20%, rgba(120, 90, 220, 0.18), transparent 55%),
+                radial-gradient(circle at 85% 80%, rgba(70, 50, 160, 0.22), transparent 55%),
+                #0b0b12;
+            overflow-y: auto;
+        }
+        /* Subtle animated starfield / dot-grid behind everything */
+        #incognito::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background-image: radial-gradient(rgba(255, 255, 255, 0.08) 1px, transparent 1px);
+            background-size: 26px 26px;
+            mask-image: radial-gradient(circle at 50% 50%, #000 0%, transparent 78%);
+            -webkit-mask-image: radial-gradient(circle at 50% 50%, #000 0%, transparent 78%);
+            pointer-events: none;
+            opacity: 0.6;
+        }
+        .incog-illustration {
+            flex: 0 0 auto;
+            width: min(420px, 38vw);
+            aspect-ratio: 1 / 1;
+            position: relative;
+            filter: drop-shadow(0 0 40px rgba(140, 110, 230, 0.35));
+        }
+        .incog-illustration svg { width: 100%; height: 100%; display: block; }
+        .incog-text {
+            flex: 0 1 620px;
+            max-width: 620px;
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+            position: relative;
+            z-index: 1;
+        }
+        .incog-eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 0.18em;
+            text-transform: uppercase;
+            color: #b794f6;
+        }
+        .incog-eyebrow .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #b794f6;
+            box-shadow: 0 0 12px #b794f6;
+            animation: incogPulse 1.8s ease-in-out infinite;
+        }
+        @keyframes incogPulse {
+            0%, 100% { opacity: 0.5; transform: scale(0.9); }
+            50% { opacity: 1; transform: scale(1.15); }
+        }
+        .incog-text h1 {
+            font-size: clamp(30px, 3.4vw, 44px);
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            line-height: 1.1;
+            color: #f5f2ff;
+        }
+        .incog-text h1 em {
+            font-style: normal;
+            background: linear-gradient(120deg, #b794f6, #7c5cff 60%, #c084fc);
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+        }
+        .incog-text p {
+            font-size: 15px;
+            line-height: 1.65;
+            color: #b8b3c9;
+        }
+        .incog-list {
+            list-style: none;
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 10px;
+            margin-top: 4px;
+        }
+        .incog-list li {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            font-size: 14px;
+            line-height: 1.5;
+            color: #d8d3e8;
+            padding: 10px 14px;
+            border-radius: 10px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(183, 148, 246, 0.15);
+        }
+        .incog-list li::before {
+            content: "";
+            flex: none;
+            width: 18px;
+            height: 18px;
+            margin-top: 1px;
+            border-radius: 5px;
+            background: rgba(183, 148, 246, 0.16);
+            border: 1px solid rgba(183, 148, 246, 0.5);
+            position: relative;
+        }
+        .incog-list li::after {
+            content: "";
+            position: absolute;
+        }
+        /* little check tick */
+        .incog-list li > span { position: relative; }
+        .incog-list li > span::before {
+            content: "✕";
+            position: absolute;
+            left: -26px;
+            top: -1px;
+            width: 18px;
+            height: 18px;
+            display: grid;
+            place-items: center;
+            font-size: 10px;
+            color: #f0a6ff;
+            font-weight: 900;
+        }
+        .incog-callout {
+            margin-top: 6px;
+            display: flex;
+            align-items: flex-start;
+            gap: 14px;
+            padding: 16px 18px;
+            border-radius: 12px;
+            background: linear-gradient(135deg, rgba(183, 148, 246, 0.10), rgba(124, 92, 255, 0.06));
+            border: 1px solid rgba(183, 148, 246, 0.28);
+            box-shadow: 0 0 24px rgba(124, 92, 255, 0.12) inset;
+        }
+        .incog-callout .incog-icon {
+            flex: none;
+            width: 34px;
+            height: 34px;
+            border-radius: 9px;
+            display: grid;
+            place-items: center;
+            background: rgba(183, 148, 246, 0.16);
+            color: #d8b4fe;
+            font-size: 16px;
+        }
+        .incog-callout strong {
+            display: block;
+            font-size: 13px;
+            letter-spacing: 0.02em;
+            color: #efe9ff;
+            margin-bottom: 3px;
+        }
+        .incog-callout small {
+            font-size: 12.5px;
+            line-height: 1.55;
+            color: #a8a2bd;
+        }
+        .incog-search {
+            margin-top: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 4px 4px 6px;
+            border-radius: 14px;
+            background: rgba(20, 16, 34, 0.85);
+            border: 1px solid rgba(183, 148, 246, 0.28);
+            max-width: 520px;
+        }
+        .incog-search input {
+            flex: 1;
+            background: transparent;
+            border: none;
+            outline: none;
+            color: #f1edff;
+            font-size: 14px;
+            padding: 12px 8px;
+            font-family: inherit;
+        }
+        .incog-search input::placeholder { color: #8a83a3; }
+        .incog-search button {
+            border: none;
+            background: linear-gradient(135deg, #7c5cff, #b794f6);
+            color: #0b0b12;
+            font-weight: 800;
+            font-size: 13px;
+            padding: 10px 18px;
+            border-radius: 10px;
+            cursor: pointer;
+            letter-spacing: 0.04em;
+        }
+        .incog-search button:hover { filter: brightness(1.1); }
+        .incog-foot {
+            margin-top: 6px;
+            font-size: 11.5px;
+            color: #7d7793;
+            letter-spacing: 0.04em;
+        }
+
+        @media (max-width: 900px) {
+            #incognito { flex-direction: column; gap: 32px; padding: 40px 6vw; align-items: center; text-align: left; }
+            .incog-illustration { width: min(280px, 60vw); }
+            .incog-text { max-width: 100%; }
+        }
     </style>
 </head>
 <body>
-    <div class="wallpaper wp-neon" id="wallpaper" aria-hidden="true"></div>
-    <div class="wp-dim" id="wp-dim" aria-hidden="true"></div>
 
-    <main class="stage" id="stage">
-        <div class="clock" id="clock">
-            <div id="time"></div>
-            <div id="date"></div>
-        </div>
+    <!-- ============================= NORMAL NEW TAB ============================= -->
+    <div id="normal">
+        <div class="wallpaper wp-neon" id="wallpaper" aria-hidden="true"></div>
+        <div class="wp-dim" id="wp-dim" aria-hidden="true"></div>
 
-        <form class="searchbar" id="search-form" role="search" autocomplete="off">
-            <label class="sr-only" for="engine">Search engine</label>
-            <select id="engine">
-                <option value="https://www.google.com/search?q=">Google</option>
-                <option value="https://www.bing.com/search?q=">Bing</option>
-                <option value="https://duckduckgo.com/?q=">DuckDuckGo</option>
-                <option value="https://search.brave.com/search?q=">Brave</option>
-            </select>
-            <label class="sr-only" for="q">Search the web or type a URL</label>
-            <input type="text" id="q" placeholder="Search the web or type a URL" spellcheck="false" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="suggest" />
-            <button type="submit" class="go">Search</button>
-            <div class="suggest" id="suggest" role="listbox" hidden></div>
-        </form>
+        <main class="stage" id="stage">
+            <div class="clock" id="clock">
+                <div id="time"></div>
+                <div id="date"></div>
+            </div>
 
-        <div class="dial" id="dial" role="list" aria-label="Speed Dial"></div>
-    </main>
+            <form class="searchbar" id="search-form" role="search" autocomplete="off">
+                <label class="sr-only" for="engine">Search engine</label>
+                <select id="engine">
+                    <option value="https://www.google.com/search?q=">Google</option>
+                    <option value="https://www.bing.com/search?q=">Bing</option>
+                    <option value="https://duckduckgo.com/?q=">DuckDuckGo</option>
+                    <option value="https://search.brave.com/search?q=">Brave</option>
+                </select>
+                <label class="sr-only" for="q">Search the web or type a URL</label>
+                <input type="text" id="q" placeholder="Search the web or type a URL" spellcheck="false" autocomplete="off" role="combobox" aria-expanded="false" aria-controls="suggest" />
+                <button type="submit" class="go">Search</button>
+                <div class="suggest" id="suggest" role="listbox" hidden></div>
+            </form>
 
-    <button class="customize-btn" id="customize-btn" aria-haspopup="dialog">🎨 Customize</button>
+            <div class="dial" id="dial" role="list" aria-label="Speed Dial"></div>
+        </main>
 
-    <aside class="drawer" id="drawer" role="dialog" aria-label="Customize new tab" hidden>
-        <div class="drawer-head">
-            <span>Customize</span>
-            <button class="icon-btn" id="drawer-close" aria-label="Close">✕</button>
-        </div>
-        <div class="drawer-body">
-            <section>
-                <h3>Wallpaper</h3>
-                <div class="wp-grid" id="wp-grid"></div>
-            </section>
-            <section>
-                <h3>Accent color</h3>
-                <div class="swatches" id="accent-swatches" role="radiogroup" aria-label="Accent color"></div>
-            </section>
-            <section>
-                <div class="slider-row">
-                    <div class="slider-top"><label for="dim">Darken</label><output id="dim-out"></output></div>
-                    <input type="range" id="dim" min="0" max="80" step="1" />
+        <button class="customize-btn" id="customize-btn" aria-haspopup="dialog">🎨 Customize</button>
+
+        <aside class="drawer" id="drawer" role="dialog" aria-label="Customize new tab" hidden>
+            <div class="drawer-head">
+                <span>Customize</span>
+                <button class="icon-btn" id="drawer-close" aria-label="Close">✕</button>
+            </div>
+            <div class="drawer-body">
+                <section>
+                    <h3>Wallpaper</h3>
+                    <div class="wp-grid" id="wp-grid"></div>
+                </section>
+                <section>
+                    <h3>Accent color</h3>
+                    <div class="swatches" id="accent-swatches" role="radiogroup" aria-label="Accent color"></div>
+                </section>
+                <section>
+                    <div class="slider-row">
+                        <div class="slider-top"><label for="dim">Darken</label><output id="dim-out"></output></div>
+                        <input type="range" id="dim" min="0" max="80" step="1" />
+                    </div>
+                    <div class="slider-row" style="margin-top:14px">
+                        <div class="slider-top"><label for="blur">Blur</label><output id="blur-out"></output></div>
+                        <input type="range" id="blur" min="0" max="20" step="1" />
+                    </div>
+                </section>
+                <section>
+                    <div class="row">
+                        <label for="show-clock">Show clock</label>
+                        <label class="switch"><input type="checkbox" id="show-clock"><span class="slider"></span></label>
+                    </div>
+                </section>
+                <section>
+                    <button class="btn" id="all-settings">All settings…</button>
+                </section>
+            </div>
+        </aside>
+
+        <div class="modal" id="dial-modal" hidden>
+            <div class="modal-card" role="dialog" aria-labelledby="dial-modal-title">
+                <h2 id="dial-modal-title">Add to Speed Dial</h2>
+                <input type="text" id="dial-title" placeholder="Name (optional)" maxlength="40" autocomplete="off" />
+                <input type="text" id="dial-url" placeholder="Address, e.g. github.com" autocomplete="off" spellcheck="false" />
+                <div class="dial-image">
+                    <div class="dial-image-preview" id="dial-image-preview" aria-hidden="true"></div>
+                    <div class="dial-image-actions">
+                        <button class="btn btn-sm" id="dial-image-choose" type="button">Choose image…</button>
+                        <button class="btn btn-sm" id="dial-image-clear" type="button" hidden>Use default look</button>
+                    </div>
                 </div>
-                <div class="slider-row" style="margin-top:14px">
-                    <div class="slider-top"><label for="blur">Blur</label><output id="blur-out"></output></div>
-                    <input type="range" id="blur" min="0" max="20" step="1" />
-                </div>
-            </section>
-            <section>
-                <div class="row">
-                    <label for="show-clock">Show clock</label>
-                    <label class="switch"><input type="checkbox" id="show-clock"><span class="slider"></span></label>
-                </div>
-            </section>
-            <section>
-                <button class="btn" id="all-settings">All settings…</button>
-            </section>
-        </div>
-    </aside>
-
-    <div class="modal" id="dial-modal" hidden>
-        <div class="modal-card" role="dialog" aria-labelledby="dial-modal-title">
-            <h2 id="dial-modal-title">Add to Speed Dial</h2>
-            <input type="text" id="dial-title" placeholder="Name (optional)" maxlength="40" autocomplete="off" />
-            <input type="text" id="dial-url" placeholder="Address, e.g. github.com" autocomplete="off" spellcheck="false" />
-            <div class="dial-image">
-                <div class="dial-image-preview" id="dial-image-preview" aria-hidden="true"></div>
-                <div class="dial-image-actions">
-                    <button class="btn btn-sm" id="dial-image-choose" type="button">Choose image…</button>
-                    <button class="btn btn-sm" id="dial-image-clear" type="button" hidden>Use default look</button>
+                <div class="form-error" id="dial-error" role="alert"></div>
+                <div class="modal-actions">
+                    <button class="btn" id="dial-cancel" type="button">Cancel</button>
+                    <button class="btn btn-primary" id="dial-save" type="button">Save</button>
                 </div>
             </div>
-            <div class="form-error" id="dial-error" role="alert"></div>
-            <div class="modal-actions">
-                <button class="btn" id="dial-cancel" type="button">Cancel</button>
-                <button class="btn btn-primary" id="dial-save" type="button">Save</button>
-            </div>
         </div>
+
+        <div class="toast" id="toast" role="status" aria-live="polite"></div>
     </div>
 
-    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <!-- ============================= INCOGNITO PAGE ============================= -->
+    <section id="incognito" aria-label="Private browsing">
+        <div class="incog-illustration" aria-hidden="true">
+            <!-- Dotted halftone hand + spark, hand-drawn vector style -->
+            <svg viewBox="0 0 400 400" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                    <radialGradient id="spark" cx="50%" cy="50%" r="50%">
+                        <stop offset="0%" stop-color="#ffffff" stop-opacity="1"/>
+                        <stop offset="60%" stop-color="#c084fc" stop-opacity="0.7"/>
+                        <stop offset="100%" stop-color="#7c5cff" stop-opacity="0"/>
+                    </radialGradient>
+                    <pattern id="dots" x="0" y="0" width="9" height="9" patternUnits="userSpaceOnUse">
+                        <circle cx="2" cy="2" r="1.35" fill="#e8e6f0"/>
+                    </pattern>
+                    <mask id="handMask">
+                        <path d="M100 300
+                                 C 60 260, 55 210, 95 175
+                                 C 120 152, 150 148, 175 155
+                                 L 175 105
+                                 C 175 88, 195 88, 195 105
+                                 L 195 200
+                                 L 210 200
+                                 L 210 95
+                                 C 210 78, 230 78, 230 95
+                                 L 230 200
+                                 L 245 200
+                                 L 245 110
+                                 C 245 93, 265 93, 265 110
+                                 L 265 200
+                                 L 280 200
+                                 L 280 130
+                                 C 280 113, 300 113, 300 130
+                                 L 300 220
+                                 C 300 270, 280 320, 240 345
+                                 C 200 370, 150 360, 100 300 Z
+                                 "
+                              fill="url(#dots)"/>
+                    </mask>
+                </defs>
+
+                <!-- Halftone hand silhouette -->
+                <g mask="url(#handMask)">
+                    <rect x="0" y="0" width="400" height="400" fill="url(#dots)"/>
+                </g>
+
+                <!-- Outlined hand hints -->
+                <path d="M100 300
+                         C 60 260, 55 210, 95 175
+                         C 120 152, 150 148, 175 155
+                         L 175 105
+                         C 175 88, 195 88, 195 105
+                         L 195 200
+                         L 210 200
+                         L 210 95
+                         C 210 78, 230 78, 230 95
+                         L 230 200
+                         L 245 200
+                         L 245 110
+                         C 245 93, 265 93, 265 110
+                         L 265 200
+                         L 280 200
+                         L 280 130
+                         C 280 113, 300 113, 300 130
+                         L 300 220
+                         C 300 270, 280 320, 240 345
+                         C 200 370, 150 360, 100 300 Z"
+                      fill="none" stroke="rgba(230,220,255,0.45)" stroke-width="1.2" stroke-dasharray="3 5"/>
+
+                <!-- Spark floating above the hand -->
+                <circle cx="238" cy="120" r="60" fill="url(#spark)" opacity="0.55"/>
+                <g stroke="#ffffff" stroke-width="2.2" stroke-linecap="round">
+                    <line x1="238" y1="70"  x2="238" y2="45"/>
+                    <line x1="238" y1="170" x2="238" y2="195"/>
+                    <line x1="188" y1="120" x2="163" y2="120"/>
+                    <line x1="288" y1="120" x2="313" y2="120"/>
+                    <line x1="203" y1="85"  x2="185" y2="67"/>
+                    <line x1="273" y1="85"  x2="291" y2="67"/>
+                    <line x1="203" y1="155" x2="185" y2="173"/>
+                    <line x1="273" y1="155" x2="291" y2="173"/>
+                </g>
+                <circle cx="238" cy="120" r="10" fill="#ffffff" opacity="0.95"/>
+                <circle cx="238" cy="120" r="22" fill="none" stroke="#ffffff" stroke-width="1.2" opacity="0.5"/>
+
+                <!-- Fading trail dots -->
+                <g fill="#e8e6f0" opacity="0.75">
+                    <circle cx="330" cy="90" r="1.8"/>
+                    <circle cx="350" cy="120" r="1.4"/>
+                    <circle cx="360" cy="150" r="1"/>
+                    <circle cx="120" cy="345" r="1.8"/>
+                    <circle cx="90"  cy="320" r="1.4"/>
+                    <circle cx="70"  cy="290" r="1"/>
+                </g>
+            </svg>
+        </div>
+
+        <div class="incog-text">
+            <span class="incog-eyebrow"><span class="dot"></span> Private Window</span>
+            <h1>You’ve gone <em>incognito</em>.</h1>
+            <p>Pages you open in this window won’t show up in your browsing history, and Neira won’t keep cookies, site data or anything you type into forms.</p>
+
+            <ul class="incog-list">
+                <li><span>Your browsing history</span></li>
+                <li><span>Cookies and site data</span></li>
+                <li><span>Information entered in forms</span></li>
+                <li><span>Search suggestions from your profile</span></li>
+            </ul>
+
+            <div class="incog-callout">
+                <div class="incog-icon">🛡</div>
+                <div>
+                    <strong>This doesn’t make you invisible.</strong>
+                    <small>Websites, your employer, your school and your internet provider may still see what you visit. Bookmarks you add and files you download are kept.</small>
+                </div>
+            </div>
+
+            <form class="incog-search" id="incog-form" autocomplete="off">
+                <input type="text" id="incog-q" placeholder="Search privately or type a URL" spellcheck="false" autocomplete="off" aria-label="Search privately or type a URL">
+                <button type="submit">SEARCH</button>
+            </form>
+
+            <div class="incog-foot">Neira Private Session · Nothing on this page is saved to your profile</div>
+        </div>
+    </section>
 
     <script src="newtab.js"></script>
 </body>

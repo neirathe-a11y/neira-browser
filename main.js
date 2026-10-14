@@ -566,16 +566,36 @@ function createWindow({ isPrivate = false } = {}) {
             webviewTag: true
         }
     });
+
     const info = { win, isPrivate, partitions: new Set() };
     windows.add(info);
+
     win.maximize();
 
     win.loadFile('index.html', isPrivate ? { query: { private: '1' } } : undefined);
 
+    win.once('ready-to-show', () => {
+        win.show();
+    });
+
     const wc = win.webContents;
     wc.setWindowOpenHandler(() => ({ action: 'deny' }));
     wc.on('will-navigate', e => e.preventDefault());
-    wc.on('did-attach-webview', (_e, guest) => setupGuest(info, guest));
+
+    // Guest setup + page context-menu forwarding, in one handler.
+    wc.on('did-attach-webview', (_e, guest) => {
+        setupGuest(info, guest);
+        guest.on('context-menu', (e, params) => {
+            e.preventDefault();
+            if (!win.isDestroyed()) {
+                win.webContents.send('page-context-menu', {
+                    params,
+                    x: params.x,
+                    y: params.y
+                });
+            }
+        });
+    });
 
     win.on('maximize', () => { if (!win.isDestroyed()) win.webContents.send('window:maximized', true); });
     win.on('unmaximize', () => { if (!win.isDestroyed()) win.webContents.send('window:maximized', false); });
@@ -590,6 +610,7 @@ function createWindow({ isPrivate = false } = {}) {
             } catch (_) {}
         }
     });
+
     return info;
 }
 
@@ -665,86 +686,9 @@ function setupGuest(info, wc) {
         if (cat) activeGuest = { wc, host, category: cat };
     });
 
-    wc.on('context-menu', (_e, p) => {
-        const nav = wc.navigationHistory;
-        const canBack = nav ? nav.canGoBack() : wc.canGoBack();
-        const canForward = nav ? nav.canGoForward() : wc.canGoForward();
-        const internal = isInternalUrl(wc.getURL());
-        const hasSelection = !!(p.selectionText && p.selectionText.trim());
-        const act = id => () => sendTo(info, 'shortcut:action', id);
-
-        const template = useAccel => {
-            const key = (item, id) => {
-                const a = useAccel ? accelerator(id) : null;
-                return a ? { ...item, accelerator: a, registerAccelerator: false } : item;
-            };
-            const t = [];
-            if (p.linkURL) {
-                t.push(
-                    { label: 'Open link in new tab', click: () => sendTo(info, 'open-url', p.linkURL, { background: true }) },
-                    { label: 'Copy link address', click: () => clipboard.writeText(p.linkURL) },
-                    { type: 'separator' }
-                );
-            }
-            if (p.mediaType === 'image' && p.srcURL) {
-                t.push(
-                    { label: 'Open image in new tab', click: () => sendTo(info, 'open-url', p.srcURL, { background: true }) },
-                    { label: 'Copy image', click: () => wc.copyImageAt(p.x, p.y) },
-                    { type: 'separator' }
-                );
-            }
-            if (p.isEditable) t.push({ role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }, { type: 'separator' });
-            else if (hasSelection) t.push({ role: 'copy' }, { type: 'separator' });
-
-            t.push(key({ label: 'Back', enabled: canBack, click: () => (nav ? nav.goBack() : wc.goBack()) }, 'go_back'));
-            if (canForward) t.push(key({ label: 'Forward', click: () => (nav ? nav.goForward() : wc.goForward()) }, 'go_forward'));
-            t.push(key({ label: 'Refresh', click: () => wc.reload() }, 'reload'));
-
-            if (internal) {
-                t.push({ type: 'separator' }, { label: 'Inspect', click: () => wc.inspectElement(p.x, p.y) });
-                return t;
-            }
-            t.push(
-                { type: 'separator' },
-                key({ label: 'Save as', click: act('save_page') }, 'save_page'),
-                key({ label: 'Print', click: act('print') }, 'print'),
-                { type: 'separator' },
-                { label: 'Summarise with Neira', click: () => sendTo(info, 'assistant:summarize', hasSelection ? p.selectionText : '') },
-                key({ label: hasSelection ? 'Read aloud selection' : 'Read aloud', click: act('read_aloud') }, 'read_aloud'),
-                key({ label: 'Translate to English', click: act('translate_page') }, 'translate_page'),
-                { type: 'separator' },
-                key({ label: 'Screenshot', click: act('screenshot') }, 'screenshot'),
-                {
-                    label: 'More tools',
-                    submenu: [
-                        key({ label: 'Find in page', click: act('find_in_page') }, 'find_in_page'),
-                        key({ label: 'Bookmark this page', click: act('bookmark_curr') }, 'bookmark_curr'),
-                        { label: 'Add to Speed Dial', click: act('add_speed_dial') },
-                        key({ label: 'Duplicate tab', click: act('duplicate_tab') }, 'duplicate_tab'),
-                        key({ label: 'Copy page address', click: act('copy_url') }, 'copy_url'),
-                        { type: 'separator' },
-                        key({ label: 'Zoom in', click: act('zoom_in') }, 'zoom_in'),
-                        key({ label: 'Zoom out', click: act('zoom_out') }, 'zoom_out'),
-                        key({ label: 'Reset zoom', click: act('reset_zoom') }, 'reset_zoom'),
-                        key({ label: 'Dark mode for this site', click: act('toggle_dark_mode') }, 'toggle_dark_mode'),
-                        { type: 'separator' },
-                        key({ label: 'Developer tools', click: act('devtools_toggle') }, 'devtools_toggle'),
-                        key({ label: 'JavaScript console', click: act('devtools_console') }, 'devtools_console')
-                    ]
-                },
-                { label: 'Send to your device', click: act('send_to_device') },
-                { type: 'separator' },
-                key({ label: 'View page source', click: act('view_source') }, 'view_source'),
-                { label: 'Inspect', click: () => wc.inspectElement(p.x, p.y) }
-            );
-            return t;
-        };
-
-        let menu;
-        try { menu = Menu.buildFromTemplate(template(true)); }
-        catch (_) { menu = Menu.buildFromTemplate(template(false)); }
-        menu.popup({ window: info.win });
-    });
+    // NOTE: the native context-menu handler was removed on purpose.
+    // The chrome renderer (app.js) now shows its own HTML menu, and the
+    // did-attach-webview handler above forwards the event to it.
 }
 
 app.on('web-contents-created', (_e, contents) => {
@@ -1936,32 +1880,6 @@ app.whenReady().then(() => {
             message: 'A reset file was found in the Neira profile folder, so parental controls have been turned off and the PIN cleared.'
         });
     }
-function setupAutoUpdates() {
-    if (!app.isPackaged) return; // never runs with npm start
-
-    const logFile = path.join(app.getPath('userData'), 'update.log');
-    const ulog = m => {
-        try {
-            const text = typeof m === 'string' ? m : (m && m.stack) || String(m);
-            fs.appendFileSync(logFile, `${new Date().toISOString()} ${text}\n`);
-        } catch (_) { /* logging must never crash the app */ }
-    };
-
-    // 1. logger and listeners first
-    autoUpdater.logger = { info: ulog, warn: ulog, error: ulog, debug: ulog };
-    ulog(`started, running v${app.getVersion()}`);
-    autoUpdater.on('checking-for-update', () => ulog('checking'));
-    autoUpdater.on('update-available', i => ulog('available ' + i.version));
-    autoUpdater.on('update-not-available', i => ulog('none, latest on GitHub is ' + i.version));
-    autoUpdater.on('download-progress', p => ulog('downloading ' + Math.round(p.percent) + '%'));
-    autoUpdater.on('update-downloaded', i => ulog('downloaded ' + i.version));
-    autoUpdater.on('error', e => ulog('ERROR ' + ((e && e.stack) || e)));
-
-    // 2. then check: at startup and every 4 hours while the app stays open
-    const check = () => autoUpdater.checkForUpdatesAndNotify().catch(e => ulog('check failed: ' + ((e && e.message) || e)));
-    check();
-    setInterval(check, 4 * 60 * 60 * 1000);
-}
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow({ isPrivate: !!store.data.settings.incognitoStartup });

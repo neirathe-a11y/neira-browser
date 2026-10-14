@@ -137,8 +137,6 @@
 }
 .assistant .as-card:hover::after { opacity: 1; }
 
-/* "streaming" = the card has the answer body and only the Stop button. assistant-fx.js adds .is-streaming too;
-   the :has() form means it works without the script. */
 .assistant .as-card:is(.is-streaming, :has(.as-md):has(.as-actions > .as-link:only-child)),
 .assistant .as-card:is(.is-loading, :has(.as-skel), :has(.as-progress)) {
     border-color: var(--fx-edge);
@@ -210,7 +208,7 @@
 .assistant .as-md strong, .assistant .as-points strong { font-weight: 700; }
 .assistant .as-md p > strong { color: color-mix(in srgb, var(--accent) 45%, var(--text-main)); }
 
-/* code (ready for backticks and fenced blocks if the renderer ever emits them) */
+/* code */
 .assistant .as-card code {
     font: 12px/1.5 ui-monospace, "Cascadia Code", "SFMono-Regular", Consolas, monospace;
     padding: 2px 7px; border-radius: 6px;
@@ -279,7 +277,6 @@
     position: relative; overflow: hidden;
     transition: transform 0.25s var(--fx-spring), border-color 0.25s, box-shadow 0.3s, background 0.25s, color 0.2s, filter 0.2s;
 }
-/* press glow that starts where you click (--px/--py are set by assistant-fx.js; centred without it) */
 .assistant .as-link::before, .assistant .secondary-btn::before, .assistant .primary-btn::before {
     content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 0.6s;
     background: radial-gradient(circle at var(--px, 50%) var(--py, 50%), color-mix(in srgb, #fff 45%, transparent), transparent 58%);
@@ -361,3 +358,179 @@
         transition-duration: 0.001ms !important;
     }
 }
+
+/* ==========================================================================
+   THEME SAFETY NET
+   The base assistant styles in index.html use hard-coded cyan/purple/white
+   values. When the user picks a dark accent, or flips to the light theme,
+   those literals become unreadable. This block reasserts readable colors
+   for every text element, using only theme variables.
+   Loaded last, so it wins.
+   ========================================================================== */
+
+.assistant,
+.assistant .assistant-head,
+.assistant .assistant-body,
+.assistant .assistant-foot,
+.assistant .as-sheet,
+.assistant .as-card,
+.assistant .as-user,
+.assistant .as-empty { color: var(--text-main); }
+
+.assistant .as-title,
+.assistant .as-card h3,
+.assistant .as-card h4,
+.assistant .as-lead,
+.assistant .as-md p,
+.assistant .as-md li,
+.assistant .as-points li,
+.assistant .as-empty h3,
+.assistant .as-empty p,
+.assistant .as-row span { color: var(--text-main); }
+
+.assistant .as-meta,
+.assistant .as-status,
+.assistant .as-progress small,
+.assistant .as-note,
+.assistant .as-empty,
+.assistant .as-row small,
+.assistant .assistant-note { color: var(--text-muted); }
+
+.assistant .as-sub,
+.assistant .as-chip { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.assistant .as-chip { background: color-mix(in srgb, var(--accent) 15%, transparent); }
+
+.assistant .as-points li::before,
+.assistant .as-md li::before { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+
+.assistant .as-badge {
+    background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #000));
+    color: var(--on-accent);
+    box-shadow: 0 0 10px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+
+/* User bubble: solid accent + on-accent text, so it never clashes */
+.assistant .as-user {
+    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 68%, #000));
+    color: var(--on-accent);
+    border-color: color-mix(in srgb, #fff 20%, transparent);
+}
+.assistant .as-user * { color: inherit; }
+
+/* Answer card surface + border, no hard-coded glow tint */
+.assistant .as-card {
+    background: color-mix(in srgb, var(--bg-tab) 92%, transparent);
+    border-color: color-mix(in srgb, var(--accent) 30%, var(--border-color));
+    box-shadow: 0 12px 30px -18px rgba(0, 0, 0, 0.55);
+}
+.assistant .as-card code {
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg-tab));
+    color: var(--text-main);
+}
+
+/* Inputs / selects — read the current accent, keep text readable */
+.assistant .as-row select,
+.assistant .as-ask input,
+.assistant .as-row input[type="text"] {
+    background: var(--bg-input);
+    color: var(--text-main);
+    border-color: color-mix(in srgb, var(--accent) 35%, var(--border-color));
+}
+.assistant .as-row select:focus,
+.assistant .as-ask input:focus { border-color: var(--accent); }
+.assistant .as-ask input::placeholder { color: var(--text-muted); }
+
+/* Segment control: idle text uses muted, not slate-hard-coded */
+.assistant .seg button { color: var(--text-muted); }
+.assistant .seg button:hover:not(.active) { color: var(--text-main); }
+.assistant .seg button.active {
+    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 40%, #7000ff));
+    color: var(--on-accent);
+}
+
+/* Ask button and primary CTA — accent + on-accent only */
+.assistant #ask-btn,
+.assistant .primary-btn {
+    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 40%, #7000ff));
+    color: var(--on-accent);
+}
+
+/* Secondary button — readable in both themes */
+.assistant .secondary-btn {
+    background: color-mix(in srgb, var(--bg-tab) 85%, transparent);
+    color: var(--text-main);
+    border-color: color-mix(in srgb, var(--accent) 40%, var(--border-color));
+}
+.assistant .secondary-btn:hover {
+    background: color-mix(in srgb, var(--accent) 15%, transparent);
+    border-color: var(--accent);
+    color: var(--text-main);
+}
+
+/* Links inside cards */
+.assistant .as-link { color: var(--text-main); border-color: var(--border-color); }
+.assistant .as-link:hover { color: color-mix(in srgb, var(--accent) 70%, var(--text-main)); border-color: var(--accent); }
+
+/* Skeleton loader — no hard-coded cyan */
+.assistant .as-skel {
+    background: linear-gradient(90deg,
+        color-mix(in srgb, var(--accent) 8%, transparent) 25%,
+        color-mix(in srgb, var(--accent) 28%, transparent) 50%,
+        color-mix(in srgb, var(--accent) 8%, transparent) 75%);
+    background-size: 200% 100%;
+}
+
+/* Progress bar fill — follows accent */
+.assistant .as-bar-fill {
+    background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 55%, #fff));
+    box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+
+/* Header logo — uses accent and on-accent so it stays readable */
+.assistant .as-logo {
+    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 45%, #7000ff));
+    color: var(--on-accent);
+    box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 55%, transparent);
+}
+.assistant .as-empty .as-logo {
+    background: radial-gradient(circle,
+        color-mix(in srgb, var(--accent) 55%, #7000ff) 0%,
+        var(--accent) 100%) !important;
+    color: var(--on-accent) !important;
+}
+
+/* Empty-state bullet cards */
+.assistant .as-empty li {
+    background: color-mix(in srgb, var(--bg-tab) 85%, transparent) !important;
+    border-color: color-mix(in srgb, var(--accent) 25%, var(--border-color)) !important;
+    border-left-color: var(--accent) !important;
+    color: var(--text-main) !important;
+}
+.assistant .as-empty li span { color: var(--accent); }
+
+/* Head action buttons — keep text visible */
+.assistant .as-head-actions .nav-btn {
+    background: color-mix(in srgb, var(--text-main) 6%, transparent) !important;
+    border-color: color-mix(in srgb, var(--accent) 25%, var(--border-color)) !important;
+    color: var(--text-main) !important;
+}
+.assistant .as-head-actions .nav-btn:hover {
+    background: color-mix(in srgb, var(--accent) 22%, transparent) !important;
+    border-color: var(--accent) !important;
+    color: var(--text-main) !important;
+}
+
+/* Card headings and markdown headers — accent-tinted, not hard cyan */
+.assistant .as-card h3,
+.assistant .as-md h4 { color: var(--text-main); }
+.assistant .as-md h4 { color: color-mix(in srgb, var(--accent) 80%, var(--text-main)); }
+
+/* Scrollbar */
+.assistant .assistant-body { scrollbar-color: color-mix(in srgb, var(--accent) 45%, transparent) transparent; }
+
+/* Light theme micro-tweaks */
+:root.light-theme .assistant .as-card { box-shadow: 0 12px 30px -20px rgba(20, 20, 60, 0.35); }
+:root.light-theme .assistant .as-user { color: var(--on-accent); }
+:root.light-theme .assistant .as-md h4,
+:root.light-theme .assistant .as-sub { color: color-mix(in srgb, var(--accent) 70%, #000 30%); }
+:root.light-theme .assistant .as-link:hover { color: color-mix(in srgb, var(--accent) 70%, #000 30%); }

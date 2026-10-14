@@ -4,7 +4,29 @@
     const $ = id => document.getElementById(id);
     const MAX_DIAL = 24;
     const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const isPrivate = document.documentElement.classList.contains('private');
 
+    // =====================================================================
+    // PRIVATE MODE: completely separate page. Only wire the search box.
+    // =====================================================================
+    if (isPrivate) {
+        const form = $('incog-form');
+        const input = $('incog-q');
+        if (form && input) {
+            form.addEventListener('submit', e => {
+                e.preventDefault();
+                const text = input.value.trim();
+                if (text) api.newtab.go(text);
+            });
+            // Focus the field so the user can type right away
+            setTimeout(() => input.focus(), 50);
+        }
+        return; // nothing else runs in private mode
+    }
+
+    // =====================================================================
+    // NORMAL MODE (unchanged from your existing behaviour)
+    // =====================================================================
     const PRESETS = [
         { value: 'none', label: 'None', cls: 'wp-none' },
         { value: 'preset:neon', label: 'Neon', cls: 'wp-neon' },
@@ -18,9 +40,6 @@
     let historyItems = [];
     let bookmarkItems = [];
 
-    // -----------------------------------------------------------------------
-    // Helpers
-    // -----------------------------------------------------------------------
     function el(tag, className, text) {
         const node = document.createElement(tag);
         if (className) node.className = className;
@@ -31,13 +50,13 @@
     let toastTimer;
     function toast(message) {
         const t = $('toast');
+        if (!t) return;
         t.textContent = message;
         t.classList.add('show');
         clearTimeout(toastTimer);
         toastTimer = setTimeout(() => t.classList.remove('show'), 2200);
     }
 
-    // The browser window opens it in this tab (the new tab page becomes the site).
     const go = text => api.newtab.go(text);
 
     function hostOf(url) {
@@ -50,9 +69,9 @@
         return h % 360;
     }
 
-    // -----------------------------------------------------------------------
-    // Wallpaper (presets, uploaded image, uploaded live video)
-    // -----------------------------------------------------------------------
+    // -------------------------------------------------------------------
+    // Wallpaper
+    // -------------------------------------------------------------------
     let stars = null;
     let videoEl = null;
 
@@ -105,12 +124,14 @@
 
     function applyWallpaper() {
         const layer = $('wallpaper');
+        if (!layer) return;
         stopStars();
         videoEl = null;
         layer.className = 'wallpaper';
         layer.replaceChildren();
         layer.style.setProperty('--blur', (settings.wallpaperBlur || 0) + 'px');
-        $('wp-dim').style.opacity = String((settings.wallpaperDim || 0) / 100);
+        const dim = $('wp-dim');
+        if (dim) dim.style.opacity = String((settings.wallpaperDim || 0) / 100);
 
         const value = settings.wallpaper || 'preset:neon';
         if (value === 'none') { layer.classList.add('wp-none'); return; }
@@ -153,26 +174,27 @@
         }
     }
 
-    // Live wallpapers should not burn CPU while nobody is looking
     document.addEventListener('visibilitychange', () => {
         if (!videoEl) return;
         if (document.hidden) videoEl.pause();
         else if (!reduceMotion.matches) videoEl.play().catch(() => {});
     });
 
-    // -----------------------------------------------------------------------
+    // -------------------------------------------------------------------
     // Clock
-    // -----------------------------------------------------------------------
+    // -------------------------------------------------------------------
     function tick() {
         const now = new Date();
-        $('time').textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-        $('date').textContent = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
+        const t = $('time');
+        const d = $('date');
+        if (t) t.textContent = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        if (d) d.textContent = now.toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric' });
     }
     setInterval(tick, 10000);
 
-    // -----------------------------------------------------------------------
-    // Search bar with local suggestions (Speed Dial, bookmarks, history; nothing leaves the device)
-    // -----------------------------------------------------------------------
+    // -------------------------------------------------------------------
+    // Search bar with local suggestions
+    // -------------------------------------------------------------------
     const qInput = $('q');
     const suggestEl = $('suggest');
     let rows = [];
@@ -199,6 +221,7 @@
     }
 
     function closeSuggest() {
+        if (!suggestEl) return;
         suggestEl.hidden = true;
         suggestEl.replaceChildren();
         qInput.setAttribute('aria-expanded', 'false');
@@ -207,6 +230,7 @@
     }
 
     function renderSuggest() {
+        if (!suggestEl) return;
         suggestEl.replaceChildren();
         rows.forEach((r, i) => {
             const b = el('button', 'sg-item' + (i === selected ? ' sel' : ''));
@@ -215,7 +239,6 @@
             b.appendChild(el('span', 'sg-main', r.main));
             if (r.sub) b.appendChild(el('span', 'sg-sub', r.sub));
             if (r.kind) b.appendChild(el('span', 'sg-kind', r.kind));
-            // mousedown (not click) so the input does not lose focus first
             b.addEventListener('mousedown', e => { e.preventDefault(); go(r.value); });
             suggestEl.appendChild(b);
         });
@@ -223,36 +246,41 @@
         qInput.setAttribute('aria-expanded', rows.length ? 'true' : 'false');
     }
 
-    qInput.addEventListener('input', () => {
-        const text = qInput.value;
-        const found = computeSuggestions(text);
-        rows = text.trim() ? [{ main: `Search for “${text.trim()}”`, sub: '', kind: '', value: text.trim() }, ...found] : [];
-        selected = -1;
-        renderSuggest();
-    });
+    if (qInput) {
+        qInput.addEventListener('input', () => {
+            const text = qInput.value;
+            const found = computeSuggestions(text);
+            rows = text.trim() ? [{ main: `Search for “${text.trim()}”`, sub: '', kind: '', value: text.trim() }, ...found] : [];
+            selected = -1;
+            renderSuggest();
+        });
 
-    qInput.addEventListener('keydown', e => {
-        if (e.key === 'ArrowDown' && rows.length) { e.preventDefault(); selected = (selected + 1) % rows.length; renderSuggest(); }
-        else if (e.key === 'ArrowUp' && rows.length) { e.preventDefault(); selected = (selected - 1 + rows.length) % rows.length; renderSuggest(); }
-        else if (e.key === 'Escape') { if (rows.length) { e.preventDefault(); closeSuggest(); } }
-    });
+        qInput.addEventListener('keydown', e => {
+            if (e.key === 'ArrowDown' && rows.length) { e.preventDefault(); selected = (selected + 1) % rows.length; renderSuggest(); }
+            else if (e.key === 'ArrowUp' && rows.length) { e.preventDefault(); selected = (selected - 1 + rows.length) % rows.length; renderSuggest(); }
+            else if (e.key === 'Escape') { if (rows.length) { e.preventDefault(); closeSuggest(); } }
+        });
 
-    $('search-form').addEventListener('submit', e => {
-        e.preventDefault();
-        const text = selected >= 0 && rows[selected] ? rows[selected].value : qInput.value.trim();
-        if (text) go(text);
-    });
+        qInput.addEventListener('blur', () => setTimeout(closeSuggest, 120));
+    }
 
-    qInput.addEventListener('blur', () => setTimeout(closeSuggest, 120));
+    const searchForm = $('search-form');
+    if (searchForm) {
+        searchForm.addEventListener('submit', e => {
+            e.preventDefault();
+            const text = selected >= 0 && rows[selected] ? rows[selected].value : qInput.value.trim();
+            if (text) go(text);
+        });
+    }
 
-    $('engine').addEventListener('change', e => api.settings.set('engine', e.target.value));
+    const engineSel = $('engine');
+    if (engineSel) engineSel.addEventListener('change', e => api.settings.set('engine', e.target.value));
 
-    // -----------------------------------------------------------------------
+    // -------------------------------------------------------------------
     // Speed Dial
-    // -----------------------------------------------------------------------
+    // -------------------------------------------------------------------
     let dragFrom = null;
-
-    let keepFocus = null; // tile index that should hold focus after the next render
+    let keepFocus = null;
 
     async function saveDial(next) {
         dial = next;
@@ -262,6 +290,7 @@
 
     function renderDial() {
         const grid = $('dial');
+        if (!grid) return;
         const active = document.activeElement && document.activeElement.closest ? document.activeElement.closest('.tile') : null;
         const refocus = keepFocus !== null ? keepFocus : (active && grid.contains(active) ? [...grid.children].indexOf(active) : null);
         keepFocus = null;
@@ -279,11 +308,11 @@
             const art = el('div', 'tile-art');
             art.style.setProperty('--h1', String(hue));
             art.style.setProperty('--h2', String((hue + 40) % 360));
-            if (d.image) { // the user's own picture instead of the coloured tile
+            if (d.image) {
                 art.classList.add('has-image');
                 const img = document.createElement('img');
                 img.alt = '';
-                img.draggable = false; // so dragging the tile reorders it instead of dragging the picture
+                img.draggable = false;
                 img.addEventListener('error', () => {
                     img.remove();
                     art.classList.remove('has-image');
@@ -371,11 +400,12 @@
 
     // Add / edit dialog
     let editIndex = -1;
-    let pendingImage = ''; // file name of the picture chosen in the open dialog ('' = default look)
+    let pendingImage = '';
     const modal = $('dial-modal');
 
     function renderDialImage() {
         const box = $('dial-image-preview');
+        if (!box) return;
         box.replaceChildren();
         if (pendingImage) {
             const img = document.createElement('img');
@@ -403,7 +433,7 @@
 
     function closeModal() {
         modal.hidden = true;
-        qInput.focus();
+        if (qInput) qInput.focus();
     }
 
     function submitModal() {
@@ -424,32 +454,35 @@
         saveDial(next);
     }
 
-    $('dial-save').addEventListener('click', submitModal);
-    $('dial-cancel').addEventListener('click', closeModal);
-    $('dial-image-choose').addEventListener('click', async () => {
+    if ($('dial-save')) $('dial-save').addEventListener('click', submitModal);
+    if ($('dial-cancel')) $('dial-cancel').addEventListener('click', closeModal);
+    if ($('dial-image-choose')) $('dial-image-choose').addEventListener('click', async () => {
         $('dial-error').textContent = '';
         const r = await api.speedDial.chooseImage();
         if (r && r.ok) { pendingImage = r.image; renderDialImage(); }
         else if (r && r.reason) $('dial-error').textContent = r.reason;
     });
-    $('dial-image-clear').addEventListener('click', () => { pendingImage = ''; renderDialImage(); });
-    modal.addEventListener('mousedown', e => { if (e.target === modal) closeModal(); });
-    modal.addEventListener('keydown', e => {
-        if (e.key === 'Escape') { e.stopPropagation(); closeModal(); }
-        else if (e.key === 'Enter') {
-            if (e.target.tagName === 'BUTTON') return; // let Enter press the focused button
-            e.preventDefault();
-            submitModal();
-        }
-    });
+    if ($('dial-image-clear')) $('dial-image-clear').addEventListener('click', () => { pendingImage = ''; renderDialImage(); });
+    if (modal) {
+        modal.addEventListener('mousedown', e => { if (e.target === modal) closeModal(); });
+        modal.addEventListener('keydown', e => {
+            if (e.key === 'Escape') { e.stopPropagation(); closeModal(); }
+            else if (e.key === 'Enter') {
+                if (e.target.tagName === 'BUTTON') return;
+                e.preventDefault();
+                submitModal();
+            }
+        });
+    }
 
-    // -----------------------------------------------------------------------
+    // -------------------------------------------------------------------
     // Customize drawer
-    // -----------------------------------------------------------------------
+    // -------------------------------------------------------------------
     const drawer = $('drawer');
 
     function renderWallpaperGrid() {
         const grid = $('wp-grid');
+        if (!grid) return;
         grid.replaceChildren();
         const current = settings.wallpaper || 'preset:neon';
 
@@ -498,18 +531,25 @@
     }
 
     function renderAccentSwatches() {
-        window.neiraTheme.swatches($('accent-swatches'), settings.accent, hex => api.settings.set('accent', hex));
+        const box = $('accent-swatches');
+        if (!box || !window.neiraTheme) return;
+        window.neiraTheme.swatches(box, settings.accent, hex => api.settings.set('accent', hex));
     }
 
     function syncDrawerControls() {
-        $('dim').value = String(settings.wallpaperDim || 0);
-        $('dim-out').textContent = (settings.wallpaperDim || 0) + '%';
-        $('blur').value = String(settings.wallpaperBlur || 0);
-        $('blur-out').textContent = (settings.wallpaperBlur || 0) + 'px';
-        $('show-clock').checked = settings.showClock !== false;
+        if ($('dim')) {
+            $('dim').value = String(settings.wallpaperDim || 0);
+            $('dim-out').textContent = (settings.wallpaperDim || 0) + '%';
+        }
+        if ($('blur')) {
+            $('blur').value = String(settings.wallpaperBlur || 0);
+            $('blur-out').textContent = (settings.wallpaperBlur || 0) + 'px';
+        }
+        if ($('show-clock')) $('show-clock').checked = settings.showClock !== false;
     }
 
     function openDrawer() {
+        if (!drawer) return;
         drawer.hidden = false;
         renderWallpaperGrid();
         renderAccentSwatches();
@@ -517,31 +557,37 @@
         $('drawer-close').focus();
     }
     function closeDrawer() {
+        if (!drawer) return;
         drawer.hidden = true;
-        $('customize-btn').focus();
+        if ($('customize-btn')) $('customize-btn').focus();
     }
 
-    $('customize-btn').addEventListener('click', () => (drawer.hidden ? openDrawer() : closeDrawer()));
-    $('drawer-close').addEventListener('click', closeDrawer);
-    drawer.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
-    $('all-settings').addEventListener('click', () => go('neira://settings'));
+    if ($('customize-btn')) $('customize-btn').addEventListener('click', () => (drawer.hidden ? openDrawer() : closeDrawer()));
+    if ($('drawer-close')) $('drawer-close').addEventListener('click', closeDrawer);
+    if (drawer) drawer.addEventListener('keydown', e => { if (e.key === 'Escape') closeDrawer(); });
+    if ($('all-settings')) $('all-settings').addEventListener('click', () => go('neira://settings'));
 
-    // Sliders preview instantly, and save when released
-    $('dim').addEventListener('input', e => {
-        $('wp-dim').style.opacity = String(Number(e.target.value) / 100);
-        $('dim-out').textContent = e.target.value + '%';
-    });
-    $('dim').addEventListener('change', e => api.settings.set('wallpaperDim', Number(e.target.value)));
-    $('blur').addEventListener('input', e => {
-        $('wallpaper').style.setProperty('--blur', e.target.value + 'px');
-        $('blur-out').textContent = e.target.value + 'px';
-    });
-    $('blur').addEventListener('change', e => api.settings.set('wallpaperBlur', Number(e.target.value)));
-    $('show-clock').addEventListener('change', e => api.settings.set('showClock', e.target.checked));
+    if ($('dim')) {
+        $('dim').addEventListener('input', e => {
+            const d = $('wp-dim');
+            if (d) d.style.opacity = String(Number(e.target.value) / 100);
+            $('dim-out').textContent = e.target.value + '%';
+        });
+        $('dim').addEventListener('change', e => api.settings.set('wallpaperDim', Number(e.target.value)));
+    }
+    if ($('blur')) {
+        $('blur').addEventListener('input', e => {
+            const w = $('wallpaper');
+            if (w) w.style.setProperty('--blur', e.target.value + 'px');
+            $('blur-out').textContent = e.target.value + 'px';
+        });
+        $('blur').addEventListener('change', e => api.settings.set('wallpaperBlur', Number(e.target.value)));
+    }
+    if ($('show-clock')) $('show-clock').addEventListener('change', e => api.settings.set('showClock', e.target.checked));
 
-    // -----------------------------------------------------------------------
+    // -------------------------------------------------------------------
     // Boot
-    // -----------------------------------------------------------------------
+    // -------------------------------------------------------------------
     function applySettings(next) {
         const wallpaperChanged = next.wallpaper !== settings.wallpaper
             || next.wallpaperDim !== settings.wallpaperDim || next.wallpaperBlur !== settings.wallpaperBlur;
@@ -549,14 +595,14 @@
         window.neiraTheme.apply(next);
         window.neiraTheme.persist(next);
         if (wallpaperChanged) applyWallpaper();
-        $('clock').hidden = settings.showClock === false;
-        $('engine').value = settings.engine;
-        if (!drawer.hidden) { renderWallpaperGrid(); renderAccentSwatches(); syncDrawerControls(); }
+        if ($('clock')) $('clock').hidden = settings.showClock === false;
+        if ($('engine')) $('engine').value = settings.engine;
+        if (drawer && !drawer.hidden) { renderWallpaperGrid(); renderAccentSwatches(); syncDrawerControls(); }
     }
 
     async function init() {
         tick();
-        qInput.focus();
+        if (qInput) qInput.focus();
         renderDial();
         const [s, d, h, b] = await Promise.allSettled([
             api.settings.get(), api.speedDial.get(), api.history.get(), api.bookmarks.get()
@@ -564,7 +610,7 @@
         if (d.status === 'fulfilled') dial = d.value;
         if (h.status === 'fulfilled') historyItems = h.value;
         if (b.status === 'fulfilled') bookmarkItems = b.value;
-        settings = { ...settings, wallpaper: undefined }; // force the first apply
+        settings = { ...settings, wallpaper: undefined };
         if (s.status === 'fulfilled') applySettings(s.value);
         else applyWallpaper();
         renderDial();
@@ -573,7 +619,7 @@
         api.speedDial.onChange(list => { dial = list; renderDial(); });
         api.history.onChange(list => { historyItems = list; });
         api.bookmarks.onChange(list => { bookmarkItems = list; });
-        if (location.hash === '#customize') openDrawer(); // opened from Settings > New tab wallpaper > Customize
+        if (location.hash === '#customize') openDrawer();
     }
     init();
 })();
