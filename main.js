@@ -1936,10 +1936,32 @@ app.whenReady().then(() => {
             message: 'A reset file was found in the Neira profile folder, so parental controls have been turned off and the PIN cleared.'
         });
     }
+function setupAutoUpdates() {
+    if (!app.isPackaged) return; // never runs with npm start
 
-    if (app.isPackaged) {
-        autoUpdater.checkForUpdatesAndNotify();
-    }
+    const logFile = path.join(app.getPath('userData'), 'update.log');
+    const ulog = m => {
+        try {
+            const text = typeof m === 'string' ? m : (m && m.stack) || String(m);
+            fs.appendFileSync(logFile, `${new Date().toISOString()} ${text}\n`);
+        } catch (_) { /* logging must never crash the app */ }
+    };
+
+    // 1. logger and listeners first
+    autoUpdater.logger = { info: ulog, warn: ulog, error: ulog, debug: ulog };
+    ulog(`started, running v${app.getVersion()}`);
+    autoUpdater.on('checking-for-update', () => ulog('checking'));
+    autoUpdater.on('update-available', i => ulog('available ' + i.version));
+    autoUpdater.on('update-not-available', i => ulog('none, latest on GitHub is ' + i.version));
+    autoUpdater.on('download-progress', p => ulog('downloading ' + Math.round(p.percent) + '%'));
+    autoUpdater.on('update-downloaded', i => ulog('downloaded ' + i.version));
+    autoUpdater.on('error', e => ulog('ERROR ' + ((e && e.stack) || e)));
+
+    // 2. then check: at startup and every 4 hours while the app stays open
+    const check = () => autoUpdater.checkForUpdatesAndNotify().catch(e => ulog('check failed: ' + ((e && e.message) || e)));
+    check();
+    setInterval(check, 4 * 60 * 60 * 1000);
+}
 
     app.on('activate', () => {
         if (BrowserWindow.getAllWindows().length === 0) createWindow({ isPrivate: !!store.data.settings.incognitoStartup });
