@@ -112,7 +112,7 @@ const CATEGORIES = [
             ['focus_prev_pane', 'Focus on previous pane', 'Shift + F6']
         ]
     },
-    {
+        {
         category: 'Menus & Help',
         items: [
             ['show_app_menu', 'Show app menu', 'Alt + F'],

@@ -369,6 +369,7 @@
         .nav-btn:hover:not(:disabled) { background: rgba(0, 240, 255, 0.1); color: var(--accent); }
         .nav-btn:hover:not(:disabled) svg { opacity: 1; }
         .nav-btn:disabled { opacity: 0.3; cursor: default; }
+                #downloads-btn { position: relative; }
         .nav-btn.active-split { background: rgba(0, 240, 255, 0.15); color: var(--accent); }
 
         .url-bar-container { flex: 1 1 0; min-width: 160px; max-width: 820px; position: relative; display: flex; align-items: center; -webkit-app-region: no-drag; }
@@ -395,7 +396,47 @@
             color: var(--text-main);
             box-shadow: 0 0 15px color-mix(in srgb, var(--accent) 40%, transparent), inset 0 2px 4px rgba(0, 0, 0, 0.5);
         }
+        .tracker-shield {
+            position: absolute; left: 12px; cursor: pointer; color: var(--text-muted);
+            font-size: 14px; transition: color 0.2s, opacity 0.2s;
+            width: 20px; height: 20px; display: grid; place-items: center;
+            border-radius: 50%; user-select: none;
+        }
+        .tracker-shield:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 15%, transparent); }
+        .tracker-shield.active { color: var(--accent); }
+        .tracker-shield.has-count { color: #4ade80; }
+        .tracker-shield.has-count::after {
+            content: attr(data-count);
+            position: absolute;
+            top: -4px; right: -6px;
+            font-size: 9px; font-weight: 700;
+            background: #4ade80; color: #052e16;
+            min-width: 14px; height: 14px; line-height: 14px;
+            padding: 0 3px; border-radius: 7px;
+            text-align: center;
+        }
+        #url-input { padding-left: 40px; }
 
+                .reader-btn {
+            position: absolute;
+            right: 34px;
+            cursor: pointer;
+            color: var(--text-muted);
+            font-size: 13px;
+            font-weight: 800;
+            font-family: ui-monospace, Menlo, Consolas, monospace;
+            transition: color 0.2s, opacity 0.2s, transform 0.15s;
+            padding: 3px 7px;
+            border-radius: 6px;
+            user-select: none;
+            letter-spacing: -0.5px;
+        }
+        .reader-btn:hover {
+            color: var(--accent);
+            background: color-mix(in srgb, var(--accent) 15%, transparent);
+            transform: scale(1.05);
+        }
+        #url-input { padding-right: 60px; }
         .bookmark-star { position: absolute; right: 12px; cursor: pointer; color: var(--text-muted); font-size: 16px; transition: color 0.2s; }
         .bookmark-star:hover { color: #f1c40f; }
         .bookmark-star.bookmarked { color: #f1c40f; text-shadow: 0 0 8px rgba(241, 196, 15, 0.6); }
@@ -840,6 +881,42 @@
         .dd-hint { color: var(--text-muted); font-size: 11px; font-family: ui-monospace, Menlo, Consolas, monospace; }
         .dd-sep { height: 1px; background: var(--border-color); margin: 5px 4px; }
         .dd-header { padding: 6px 10px 8px; font-size: 12px; color: var(--text-muted); }
+                .tracker-pop {
+            position: fixed; z-index: 62; width: 300px;
+            background: var(--bg-toolbar); border: 1px solid var(--border-color);
+            border-radius: 12px; padding: 12px;
+            box-shadow: 0 18px 44px rgba(0,0,0,0.5);
+            animation: ppIn 0.18s ease-out both;
+            color: var(--text-main);
+        }
+        .tracker-pop h3 { font-size: 13px; margin-bottom: 4px; }
+        .tracker-pop p { font-size: 12px; color: var(--text-muted); line-height: 1.5; margin-bottom: 10px; }
+        .tracker-pop .tp-stat {
+            display: flex; align-items: baseline; gap: 8px;
+            font-size: 24px; font-weight: 700; color: var(--accent);
+            margin-bottom: 12px;
+        }
+        .tracker-pop .tp-stat small { font-size: 12px; font-weight: 500; color: var(--text-muted); }
+        .tracker-pop .tp-hosts {
+            max-height: 140px; overflow-y: auto; margin-bottom: 10px;
+            font-size: 12px; font-family: ui-monospace, Menlo, Consolas, monospace;
+        }
+        .tracker-pop .tp-hosts div {
+            display: flex; justify-content: space-between;
+            padding: 3px 0; color: var(--text-muted);
+            border-bottom: 1px solid var(--border-color);
+        }
+        .tracker-pop .tp-hosts div:last-child { border-bottom: none; }
+        .tracker-pop .tp-hosts strong { color: var(--text-main); }
+        .tracker-pop .tp-actions { display: flex; flex-direction: column; gap: 6px; }
+        .tracker-pop button {
+            width: 100%; text-align: left;
+            background: transparent; border: 1px solid var(--border-color);
+            color: var(--text-main); font-size: 12px; padding: 7px 10px;
+            border-radius: 8px; cursor: pointer; font-family: inherit;
+        }
+        .tracker-pop button:hover { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+        .tracker-pop button.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
 
         /* ==================== Tab search ==================== */
         .overlay {
@@ -873,6 +950,521 @@
             pointer-events: none; transition: opacity 0.15s, transform 0.15s; z-index: 80;
         }
         .toast.show { opacity: 1; transform: translate(-50%, 0); }
+                /* ==================== Reader mode ==================== */
+        .reader-chrome {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 10px 16px;
+            background: color-mix(in srgb, var(--bg-toolbar) 96%, transparent);
+            border-bottom: 1px solid var(--border-color);
+            position: sticky;
+            top: 0;
+            z-index: 5;
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+        }
+        .reader-chrome .rd-group {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 2px;
+        }
+        .reader-chrome button {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            font-family: inherit;
+            font-size: 12px;
+            font-weight: 600;
+            padding: 5px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.15s, color 0.15s;
+        }
+        .reader-chrome button:hover { color: var(--text-main); background: color-mix(in srgb, var(--text-main) 8%, transparent); }
+        .reader-chrome button.active {
+            background: var(--accent);
+            color: var(--on-accent);
+        }
+        .reader-chrome .rd-sep { width: 1px; height: 18px; background: var(--border-color); margin: 0 4px; }
+        .reader-chrome .rd-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            padding: 0 4px;
+        }
+        .reader-body {
+            background: var(--bg-main, var(--bg-top));
+            color: var(--text-main);
+            min-height: calc(100vh - 56px);
+            padding: 40px 24px 96px;
+        }
+        .reader-article {
+            max-width: var(--reader-width, 720px);
+            margin: 0 auto;
+            font-family: var(--reader-font, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+            font-size: var(--reader-size, 18px);
+            line-height: var(--reader-line, 1.65);
+            color: var(--text-main);
+        }
+        .reader-article header { margin-bottom: 32px; }
+        .reader-article .rd-site {
+            font-size: 13px;
+            color: var(--accent);
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            text-transform: uppercase;
+            margin-bottom: 8px;
+        }
+        .reader-article h1 {
+            font-size: 1.9em;
+            line-height: 1.15;
+            letter-spacing: -0.015em;
+            font-weight: 800;
+            margin-bottom: 12px;
+        }
+        .reader-article .rd-meta {
+            font-size: 13px;
+            color: var(--text-muted);
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .reader-article h2 {
+            font-size: 1.35em;
+            font-weight: 700;
+            margin: 32px 0 12px;
+            line-height: 1.25;
+            letter-spacing: -0.01em;
+        }
+        .reader-article h3 {
+            font-size: 1.15em;
+            font-weight: 700;
+            margin: 26px 0 10px;
+        }
+        .reader-article p { margin: 0 0 18px; }
+        .reader-article a { color: var(--accent); text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 2px; }
+        .reader-article a:hover { text-decoration-thickness: 2px; }
+        .reader-article ul, .reader-article ol { margin: 0 0 18px; padding-left: 1.5em; }
+        .reader-article li { margin-bottom: 6px; }
+        .reader-article blockquote {
+            border-left: 3px solid var(--accent);
+            padding-left: 16px;
+            margin: 20px 0;
+            color: var(--text-muted);
+            font-style: italic;
+        }
+        .reader-article img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 10px;
+            margin: 20px 0;
+        }
+        .reader-article code {
+            background: color-mix(in srgb, var(--text-main) 10%, transparent);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.92em;
+        }
+        .reader-article pre {
+            background: color-mix(in srgb, var(--text-main) 6%, transparent);
+            padding: 14px 16px;
+            border-radius: 10px;
+            overflow-x: auto;
+            margin: 20px 0;
+            font-size: 0.9em;
+        }
+        .reader-article pre code { background: none; padding: 0; }
+        .reader-article hr {
+            border: none;
+            border-top: 1px solid var(--border-color);
+            margin: 32px 0;
+        }
+        .reader-empty {
+            max-width: 520px;
+            margin: 60px auto;
+            text-align: center;
+            color: var(--text-muted);
+            padding: 0 24px;
+        }
+        .reader-empty .rd-big { font-size: 40px; margin-bottom: 12px; opacity: 0.6; }
+        .reader-empty h2 { color: var(--text-main); font-size: 18px; margin-bottom: 8px; }
+        .reader-empty p { font-size: 14px; line-height: 1.6; }
+                /* ==================== URL autocomplete ==================== */
+        .url-suggest {
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            right: 0;
+            z-index: 55;
+            background: var(--bg-toolbar);
+            border: 1px solid color-mix(in srgb, var(--accent) 25%, var(--border-color));
+            border-radius: 12px;
+            padding: 6px;
+            box-shadow: 0 16px 44px rgba(0, 0, 0, 0.55);
+            animation: urlSugIn 0.1s ease-out both;
+            overflow: hidden;
+        }
+        @keyframes urlSugIn {
+            from { opacity: 0; transform: translateY(-4px); }
+            to   { opacity: 1; transform: none; }
+        }
+        .url-sug-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            width: 100%;
+            text-align: left;
+            background: transparent;
+            border: none;
+            color: var(--text-main);
+            padding: 8px 10px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 13px;
+        }
+        .url-sug-item:hover,
+        .url-sug-item.selected {
+            background: color-mix(in srgb, var(--accent) 14%, var(--bg-tab-active));
+        }
+        .url-sug-icon {
+            flex: none;
+            width: 20px;
+            height: 20px;
+            display: grid;
+            place-items: center;
+            border-radius: 5px;
+            background: color-mix(in srgb, var(--text-main) 8%, transparent);
+            color: var(--text-muted);
+            font-size: 11px;
+            font-weight: 700;
+        }
+        .url-sug-icon.kind-tab { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+        .url-sug-icon.kind-bookmark { background: rgba(241, 196, 15, 0.18); color: #f1c40f; }
+        .url-sug-icon.kind-history { background: color-mix(in srgb, #94a3b8 22%, transparent); color: #94a3b8; }
+        .url-sug-icon.kind-dial { background: rgba(74, 222, 128, 0.18); color: #4ade80; }
+        .url-sug-icon.kind-search { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); }
+        .url-sug-icon img { width: 14px; height: 14px; border-radius: 3px; }
+        .url-sug-mid {
+            flex: 1;
+            min-width: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 1px;
+        }
+        .url-sug-title {
+            font-size: 13px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: var(--text-main);
+        }
+        .url-sug-title b {
+            color: var(--accent);
+            font-weight: 700;
+        }
+        .url-sug-sub {
+            font-size: 11px;
+            color: var(--text-muted);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .url-sug-badge {
+            flex: none;
+            font-size: 10px;
+            color: var(--text-muted);
+            font-family: ui-monospace, Menlo, Consolas, monospace;
+            padding: 2px 6px;
+            border-radius: 4px;
+            background: color-mix(in srgb, var(--text-main) 6%, transparent);
+        }
+        .url-sug-item.selected .url-sug-badge {
+            background: color-mix(in srgb, var(--accent) 30%, transparent);
+            color: var(--text-main);
+        }
+        /* ==================== Downloads shelf ==================== */
+        .dl-shelf {
+            position: fixed;
+            left: 12px;
+            bottom: 12px;
+            width: 420px;
+            max-width: calc(100vw - 24px);
+            z-index: 92;
+            background: color-mix(in srgb, var(--bg-toolbar) 96%, transparent);
+            border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border-color));
+            border-radius: 14px;
+            box-shadow: 0 22px 60px rgba(0, 0, 0, 0.55), 0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent);
+            backdrop-filter: blur(14px);
+            -webkit-backdrop-filter: blur(14px);
+            color: var(--text-main);
+            display: flex;
+            flex-direction: column;
+            max-height: min(420px, 55vh);
+            overflow: hidden;
+            animation: dlShelfIn 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+        @keyframes dlShelfIn {
+            from { opacity: 0; transform: translateY(14px) scale(0.99); }
+            to   { opacity: 1; transform: none; }
+        }
+        .dl-shelf-head {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px 10px 14px;
+            border-bottom: 1px solid var(--border-color);
+        }
+        .dl-shelf-head .dl-title {
+            flex: 1;
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+        }
+        .dl-shelf-head .dl-title small {
+            font-weight: 500;
+            color: var(--text-muted);
+            margin-left: 8px;
+        }
+        .dl-shelf-head button {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            font-size: 14px;
+            width: 28px;
+            height: 28px;
+            border-radius: 8px;
+            display: grid;
+            place-items: center;
+            font-family: inherit;
+        }
+        .dl-shelf-head button:hover { background: color-mix(in srgb, var(--text-main) 8%, transparent); color: var(--text-main); }
+        .dl-shelf-body {
+            overflow-y: auto;
+            scrollbar-width: thin;
+            padding: 4px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .dl-row {
+            display: flex;
+            gap: 10px;
+            padding: 10px 10px 10px 12px;
+            border-radius: 10px;
+            transition: background 0.12s;
+        }
+        .dl-row:hover { background: color-mix(in srgb, var(--text-main) 5%, transparent); }
+        .dl-row .dl-icon {
+            flex: none;
+            width: 32px;
+            height: 32px;
+            display: grid;
+            place-items: center;
+            border-radius: 8px;
+            background: color-mix(in srgb, var(--accent) 15%, transparent);
+            color: var(--accent);
+            font-size: 14px;
+            font-weight: 700;
+            margin-top: 2px;
+        }
+        .dl-row .dl-mid { flex: 1; min-width: 0; }
+        .dl-row .dl-name {
+            font-size: 13px;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            color: var(--text-main);
+        }
+        .dl-row .dl-sub {
+            font-size: 11.5px;
+            color: var(--text-muted);
+            margin-top: 2px;
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+        .dl-row .dl-sub .dl-state {
+            font-weight: 600;
+            color: color-mix(in srgb, var(--accent) 85%, var(--text-main));
+            text-transform: lowercase;
+        }
+        .dl-row.dl-done .dl-sub .dl-state { color: #4ade80; }
+        .dl-row.dl-error .dl-sub .dl-state { color: #ef4444; }
+        .dl-row .dl-bar {
+            height: 4px;
+            background: color-mix(in srgb, var(--text-main) 10%, transparent);
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 6px;
+        }
+        .dl-row .dl-bar > div {
+            height: 100%;
+            width: 0;
+            background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 50%, #fff));
+            transition: width 0.3s ease;
+            box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 60%, transparent);
+        }
+        .dl-row.dl-error .dl-bar > div { background: #ef4444; }
+        .dl-row .dl-actions {
+            flex: none;
+            display: flex;
+            gap: 2px;
+            align-items: flex-start;
+            margin-top: 2px;
+        }
+        .dl-row .dl-actions button {
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            width: 26px;
+            height: 26px;
+            border-radius: 7px;
+            display: grid;
+            place-items: center;
+            cursor: pointer;
+            font-size: 13px;
+            font-family: inherit;
+        }
+        .dl-row .dl-actions button:hover {
+            background: color-mix(in srgb, var(--text-main) 10%, transparent);
+            color: var(--text-main);
+        }
+        .dl-row .dl-actions button.danger:hover {
+            background: rgba(239, 68, 68, 0.15);
+            color: #ef4444;
+        }
+        .dl-shelf-empty {
+            padding: 26px 14px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+        .dl-shelf-empty .dl-big { font-size: 26px; opacity: 0.65; margin-bottom: 8px; }
+        /* Small indicator dot on the toolbar downloads button when shelf is hidden */
+        #downloads-btn.has-active::after {
+            content: "";
+            position: absolute;
+            top: 5px;
+            right: 5px;
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: var(--accent);
+            box-shadow: 0 0 8px var(--accent);
+            animation: dlPulse 1.4s ease-in-out infinite;
+        }
+        @keyframes dlPulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.4; transform: scale(0.7); }
+        }
+        /* ==================== Command palette ==================== */
+        .cmdk {
+            position: fixed; inset: 0; z-index: 95;
+            background: rgba(0, 0, 0, 0.5);
+            display: flex; justify-content: center; align-items: flex-start;
+            padding-top: 14vh;
+            backdrop-filter: blur(3px);
+            animation: cmdkIn 0.12s ease-out both;
+        }
+        @keyframes cmdkIn { from { opacity: 0; } to { opacity: 1; } }
+        .cmdk-card {
+            width: min(640px, 92vw);
+            background: var(--bg-toolbar);
+            border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border-color));
+            border-radius: 14px;
+            box-shadow: 0 24px 70px rgba(0, 0, 0, 0.6), 0 0 0 1px color-mix(in srgb, var(--accent) 15%, transparent);
+            overflow: hidden;
+            animation: cmdkCardIn 0.16s cubic-bezier(0.22, 1, 0.36, 1) both;
+        }
+        @keyframes cmdkCardIn { from { opacity: 0; transform: translateY(-8px) scale(0.98); } to { opacity: 1; transform: none; } }
+        #cmdk-input {
+            width: 100%; padding: 16px 20px;
+            background: transparent; border: none;
+            border-bottom: 1px solid var(--border-color);
+            color: var(--text-main); font-size: 16px; outline: none;
+            font-family: inherit; user-select: text;
+        }
+        #cmdk-input::placeholder { color: var(--text-muted); }
+        #cmdk-list {
+            max-height: 52vh; overflow-y: auto; padding: 6px;
+            scrollbar-width: thin;
+        }
+        .cmdk-item {
+            display: flex; align-items: center; gap: 12px;
+            width: 100%; text-align: left;
+            background: transparent; border: none;
+            color: var(--text-main);
+            padding: 9px 12px; border-radius: 8px;
+            cursor: pointer; font-family: inherit;
+            border: 1px solid transparent;
+        }
+        .cmdk-item:hover, .cmdk-item.selected {
+            background: var(--bg-tab-active);
+            border-color: color-mix(in srgb, var(--accent) 25%, transparent);
+        }
+        .cmdk-item.selected { background: color-mix(in srgb, var(--accent) 14%, var(--bg-tab-active)); }
+        .cmdk-icon {
+            width: 22px; height: 22px; flex: none;
+            display: grid; place-items: center;
+            border-radius: 6px;
+            background: color-mix(in srgb, var(--accent) 15%, transparent);
+            color: var(--accent);
+            font-size: 12px; font-weight: 700;
+        }
+        .cmdk-icon img { width: 16px; height: 16px; border-radius: 3px; }
+        .cmdk-body { flex: 1; min-width: 0; }
+        .cmdk-title {
+            font-size: 13.5px;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            color: var(--text-main);
+        }
+        .cmdk-sub {
+            font-size: 11.5px; color: var(--text-muted);
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+            margin-top: 1px;
+        }
+        .cmdk-hint {
+            flex: none; font-size: 11px;
+            color: var(--text-muted);
+            font-family: ui-monospace, Menlo, Consolas, monospace;
+            padding: 2px 6px; border-radius: 4px;
+            background: color-mix(in srgb, var(--text-main) 8%, transparent);
+        }
+        .cmdk-badge {
+            flex: none; font-size: 10.5px;
+            color: var(--accent);
+            background: color-mix(in srgb, var(--accent) 15%, transparent);
+            padding: 2px 8px; border-radius: 999px;
+            text-transform: uppercase; letter-spacing: 0.06em;
+            font-weight: 700;
+        }
+        .cmdk-empty {
+            padding: 28px 20px; text-align: center;
+            color: var(--text-muted); font-size: 13px;
+        }
+        .cmdk-foot {
+            display: flex; align-items: center; gap: 14px;
+            padding: 8px 14px;
+            border-top: 1px solid var(--border-color);
+            font-size: 11px; color: var(--text-muted);
+        }
+        .cmdk-foot kbd {
+            font-family: ui-monospace, Menlo, Consolas, monospace;
+            background: var(--key-bg, color-mix(in srgb, var(--text-main) 8%, transparent));
+            padding: 1px 5px; border-radius: 4px;
+            font-size: 10.5px; font-weight: 600;
+        }
+        .cmdk-foot span { display: inline-flex; align-items: center; gap: 4px; }
 
         /* ==================== Layout ==================== */
         .shell { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
@@ -1132,6 +1724,78 @@
         }
         .rail-tab.drop-before::before { top: -1px; }
         .rail-tab.drop-after::after { bottom: -1px; }
+                /* =====================================================================
+           Contrast safety: keep accent-based text and thin strokes readable
+           even when the accent is very dark (near-black).
+           ===================================================================== */
+
+        /* Profile popover */
+        .pp-add {
+            color: color-mix(in srgb, var(--accent) 55%, var(--text-main));
+        }
+        .pp-add .plus {
+            border-color: color-mix(in srgb, var(--accent) 55%, var(--text-main));
+        }
+        .pp-check {
+            color: color-mix(in srgb, var(--accent) 55%, var(--text-main));
+        }
+        .pp-item:hover,
+        .pp-add:hover {
+            background: color-mix(in srgb, var(--accent) 15%, transparent);
+        }
+        .pp-primary {
+            background: var(--accent);
+            color: var(--on-accent);
+        }
+        .pp-avatar {
+            background: var(--av, var(--accent));
+            color: var(--avt, var(--on-accent));
+        }
+
+        /* Tracker shield */
+        .tracker-shield {
+            color: var(--text-muted);
+        }
+        .tracker-shield.active {
+            color: color-mix(in srgb, var(--accent) 55%, var(--text-main));
+        }
+        .tracker-shield.has-count {
+            color: #4ade80;
+        }
+        .tracker-shield.has-count::after {
+            background: #4ade80;
+            color: #052e16;
+        }
+        .tracker-shield:hover {
+            color: var(--text-main);
+            background: color-mix(in srgb, var(--accent) 15%, transparent);
+        }
+
+        /* Bookmark star hover state — keeps yellow, no change needed but
+           make sure the surrounding hover doesn't rely on accent text */
+        .bookmark-star {
+            color: var(--text-muted);
+        }
+        .bookmark-star.bookmarked {
+            color: #f1c40f;
+        }
+
+        /* Any other accent-on-dark text elements */
+        .dd-item:hover .dd-hint,
+        .pp-head small,
+        .pp-label {
+            color: var(--text-muted);
+        }
+
+        /* Safety net: whenever accent is used as text color, mix with
+           --text-main so it never disappears on a dark surface. */
+        .pp-add,
+        .pp-check {
+            color: color-mix(in srgb, var(--accent) 60%, var(--text-main)) !important;
+        }
+        .pp-add .plus {
+            border-color: color-mix(in srgb, var(--accent) 60%, var(--text-main)) !important;
+        }
     </style>
     <link rel="stylesheet" href="assistant-fx.css">
 </head>
@@ -1189,9 +1853,12 @@
         <button class="nav-btn" id="reload" title="Reload">
             <svg viewBox="0 0 24 24"><path d="M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z"/></svg>
         </button>
-        <div class="url-bar-container">
+                <div class="url-bar-container">
+            <span class="tracker-shield" id="tracker-shield" title="Tracker blocker">🛡</span>
             <input type="text" id="url-input" placeholder="Enter search or web address" spellcheck="false" autocomplete="off" />
+            <span class="reader-btn" id="reader-btn" title="Reader view (Ctrl+Shift+R)" hidden>Aa</span>
             <span class="bookmark-star" id="bookmark-btn" title="Bookmark page">★</span>
+            <div class="url-suggest" id="url-suggest" hidden role="listbox"></div>
         </div>
         <div class="drag-spacer"></div>
         <button class="nav-btn" id="split-screen-btn" title="Toggle Split Screen">
@@ -1288,18 +1955,41 @@
     </div>
 
     <div class="dropdown" id="dropdown" role="menu" hidden></div>
+        <div class="tracker-pop" id="tracker-pop" role="dialog" aria-label="Tracker blocker" hidden></div>
     <div class="profile-pop" id="profile-pop" role="dialog" aria-label="Profiles" hidden></div>
 
       <div class="ctx-menu" id="tab-ctx" role="menu" hidden></div>
     <div class="group-pop" id="group-pop" role="dialog" aria-label="Tab groups" hidden></div>
     <div class="ctx-menu" id="page-ctx" role="menu" hidden></div>
+    
+        <div class="cmdk" id="cmdk" hidden role="dialog" aria-label="Command palette">
+        <div class="cmdk-card">
+            <input type="text" id="cmdk-input" placeholder="Search tabs, bookmarks, history, and actions…" spellcheck="false" autocomplete="off" />
+            <div id="cmdk-list" role="listbox"></div>
+            <div class="cmdk-foot">
+                <span><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
+                <span><kbd>↵</kbd> open</span>
+                <span><kbd>Esc</kbd> close</span>
+            </div>
+        </div>
+    </div>
+
     <div class="overlay" id="tab-search" hidden>
         <div class="overlay-card" role="dialog" aria-label="Search open tabs">
             <input type="text" id="tab-search-input" placeholder="Search open tabs" spellcheck="false" autocomplete="off" />
             <div id="tab-search-list" role="listbox"></div>
         </div>
     </div>
-
+    <div class="dl-shelf" id="dl-shelf" hidden role="region" aria-label="Downloads">
+        <div class="dl-shelf-head">
+            <div class="dl-title" id="dl-shelf-title">Downloads</div>
+            <button type="button" id="dl-shelf-folder" title="Open downloads folder">📂</button>
+            <button type="button" id="dl-shelf-clear" title="Clear finished downloads">🧹</button>
+            <button type="button" id="dl-shelf-close" title="Close">✕</button>
+        </div>
+        <div class="dl-shelf-body" id="dl-shelf-body"></div>
+    </div>
+    
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
     <div class="win-controls" id="win-controls">

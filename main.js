@@ -15,6 +15,7 @@ const { fileURLToPath, pathToFileURL } = require('url');
 const Shortcuts = require('./shortcuts');
 const { createStore } = require('./store');
 const { assetResponse, VIDEO_EXT, NAME_RE } = require('./assets');
+const { shouldBlock: isTracker, isAllowed: isTrackerAllowed, TRACKERS } = require('./blocklist');
 
 protocol.registerSchemesAsPrivileged([
     { scheme: 'neira-asset', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
@@ -53,7 +54,9 @@ const STORE_DEFAULTS = {
         showClock: true,
         offerSave: true,
         offerPasskey: true,
-        autoSignin: true
+        autoSignin: true,
+        trackerBlocking: true,
+        trackerAllowlist: []
     },
     shortcuts: {},
     bookmarks: [],
@@ -567,7 +570,7 @@ function createWindow({ isPrivate = false } = {}) {
         }
     });
 
-    const info = { win, isPrivate, partitions: new Set() };
+    const info = { win, isPrivate, partitions: new Set(), blockedCounts: new Map() };
     windows.add(info);
 
     win.maximize();
@@ -582,7 +585,6 @@ function createWindow({ isPrivate = false } = {}) {
     wc.setWindowOpenHandler(() => ({ action: 'deny' }));
     wc.on('will-navigate', e => e.preventDefault());
 
-    // Guest setup + page context-menu forwarding, in one handler.
     wc.on('did-attach-webview', (_e, guest) => {
         setupGuest(info, guest);
         guest.on('context-menu', (e, params) => {
@@ -593,6 +595,13 @@ function createWindow({ isPrivate = false } = {}) {
                     x: params.x,
                     y: params.y
                 });
+            }
+        });
+        guest.on('did-start-navigation', (_ev, url, isInPlace, isMainFrame) => {
+            if (isMainFrame && !isInPlace) {
+                // Reset the shield count when navigating
+                info.blockedCounts = new Map();
+                if (!win.isDestroyed()) win.webContents.send('tracker:blocked', { host: '', url, count: 0, reset: true });
             }
         });
     });
@@ -685,10 +694,6 @@ function setupGuest(info, wc) {
         const cat = categorise(host);
         if (cat) activeGuest = { wc, host, category: cat };
     });
-
-    // NOTE: the native context-menu handler was removed on purpose.
-    // The chrome renderer (app.js) now shows its own HTML menu, and the
-    // did-attach-webview handler above forwards the event to it.
 }
 
 app.on('web-contents-created', (_e, contents) => {
@@ -781,11 +786,32 @@ function setupSession(ses, isPrivate = false) {
     const ua = cleanUserAgent();
     if (ua && typeof ses.setUserAgent === 'function') ses.setUserAgent(ua);
 
+    // Tracker blocking + parental safe-search, in one request hook.
     ses.webRequest.onBeforeRequest({ urls: ['*://*/*'] }, (details, cb) => {
-        if (!parentalEnabled() || !store.data.parental.safeSearch) return cb({});
-        if (!/^https?:/i.test(details.url)) return cb({});
-        const rewritten = applySafeSearch(details.url);
-        cb(rewritten ? { redirectURL: rewritten } : {});
+        if (details.resourceType === 'mainFrame') return cb({});
+
+        let host = '';
+        try { host = new URL(details.url).hostname; } catch (_) { return cb({}); }
+
+        const blockingOn = !!(store && store.data && store.data.settings && store.data.settings.trackerBlocking !== false);
+        if (blockingOn && !isPrivate) {
+            const allowlist = store.data.settings.trackerAllowlist || [];
+            if (isTracker(host) && !isTrackerAllowed(host, allowlist)) {
+                const info = infoFromContents(details.webContentsId != null ? webContents.fromId(details.webContentsId) : null);
+                if (info) {
+                    info.blockedCounts.set(host, (info.blockedCounts.get(host) || 0) + 1);
+                    sendTo(info, 'tracker:blocked', { host, url: details.url, count: info.blockedCounts.get(host) });
+                }
+                return cb({ cancel: true });
+            }
+        }
+
+        if (parentalEnabled() && store.data.parental.safeSearch && /^https?:/i.test(details.url)) {
+            const rewritten = applySafeSearch(details.url);
+            if (rewritten) return cb({ redirectURL: rewritten });
+        }
+
+        cb({});
     });
 
     ses.setPermissionRequestHandler(async (wc, permission, callback, details) => {
@@ -898,6 +924,59 @@ const PIN_FAILS = { count: 0, until: 0 };
 const RECOVERY_FAILS = { count: 0, until: 0 };
 
 function registerIpc() {
+    handle('tracker:status', (event, host) => {
+        const settings = store.data.settings;
+        const enabled = settings.trackerBlocking !== false;
+        const allowlist = settings.trackerAllowlist || [];
+        const allowlisted = host ? isTrackerAllowed(host, allowlist) : false;
+        const info = infoFromContents(event.sender);
+        const counts = info ? Array.from(info.blockedCounts.entries()) : [];
+        const total = counts.reduce((sum, [, n]) => sum + n, 0);
+        return {
+            enabled,
+            blocking: enabled && !allowlisted,
+            allowlisted,
+            host: host || '',
+            total,
+            hosts: counts.map(([h, n]) => ({ host: h, count: n }))
+        };
+    });
+
+    handle('tracker:set-enabled', (_e, on) => {
+        store.data.settings.trackerBlocking = !!on;
+        store.save();
+        broadcast('settings:changed', store.data.settings);
+        return { ok: true };
+    });
+
+    handle('tracker:allow-site', (_e, host) => {
+        if (typeof host !== 'string' || !host) return { ok: false };
+        const clean = host.toLowerCase().replace(/^www\./, '');
+        const list = new Set(store.data.settings.trackerAllowlist || []);
+        list.add(clean);
+        store.data.settings.trackerAllowlist = Array.from(list);
+        store.save();
+        broadcast('settings:changed', store.data.settings);
+        return { ok: true };
+    });
+
+    handle('tracker:disallow-site', (_e, host) => {
+        if (typeof host !== 'string' || !host) return { ok: false };
+        const clean = host.toLowerCase().replace(/^www\./, '');
+        store.data.settings.trackerAllowlist = (store.data.settings.trackerAllowlist || [])
+            .filter(h => h !== clean);
+        store.save();
+        broadcast('settings:changed', store.data.settings);
+        return { ok: true };
+    });
+
+    handle('tracker:clear-counts', event => {
+        const info = infoFromContents(event.sender);
+        if (info) info.blockedCounts = new Map();
+        return { ok: true };
+    });
+
+    // ----- Shortcuts -----
     handle('shortcuts:get', () => ({
         categories: Shortcuts.CATEGORIES.map(c => ({
             category: c.category,
@@ -1828,7 +1907,35 @@ function switchProfile(id) {
 }
 
 // ---------------------------------------------------------------------------
-// Updater
+// Auto-updates
+// ---------------------------------------------------------------------------
+function setupAutoUpdates() {
+    if (!app.isPackaged) return;
+
+    const logFile = path.join(app.getPath('userData'), 'update.log');
+    const ulog = m => {
+        try {
+            const text = typeof m === 'string' ? m : (m && m.stack) || String(m);
+            fs.appendFileSync(logFile, `${new Date().toISOString()} ${text}\n`);
+        } catch (_) {}
+    };
+
+    autoUpdater.logger = { info: ulog, warn: ulog, error: ulog, debug: ulog };
+    ulog(`started, running v${app.getVersion()}`);
+    autoUpdater.on('checking-for-update', () => ulog('checking'));
+    autoUpdater.on('update-available', i => ulog('available ' + i.version));
+    autoUpdater.on('update-not-available', i => ulog('none, latest on GitHub is ' + i.version));
+    autoUpdater.on('download-progress', p => ulog('downloading ' + Math.round(p.percent) + '%'));
+    autoUpdater.on('update-downloaded', i => ulog('downloaded ' + i.version));
+    autoUpdater.on('error', e => ulog('ERROR ' + ((e && e.stack) || e)));
+
+    const check = () => autoUpdater.checkForUpdatesAndNotify().catch(e => ulog('check failed: ' + ((e && e.message) || e)));
+    check();
+    setInterval(check, 4 * 60 * 60 * 1000);
+}
+
+// ---------------------------------------------------------------------------
+// Update dialog
 // ---------------------------------------------------------------------------
 autoUpdater.on('update-downloaded', () => {
     dialog.showMessageBox({
@@ -1872,6 +1979,8 @@ app.whenReady().then(() => {
     registerIpc();
     if (parentalEnabled()) startParentalTicker();
     createWindow({ isPrivate: !!store.data.settings.incognitoStartup });
+
+    setupAutoUpdates();
 
     if (resetFired) {
         dialog.showMessageBox({

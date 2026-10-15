@@ -14,10 +14,7 @@ const on = channel => callback => {
 contextBridge.exposeInMainWorld('neira', {
     confirm: message => invoke('dialog:confirm', message),
     copy: text => invoke('clipboard:write', text),
-
-        onPageContextMenu: (cb) =>
-        ipcRenderer.on('page-context-menu', (_e, payload) => cb(payload)),
-        
+    onPageContextMenu: (cb) => ipcRenderer.on('page-context-menu', (_e, payload) => cb(payload)),
     runMainAction: id => send('action:run', id),
     savePage: webContentsId => invoke('page:save', webContentsId),
     clearBrowsingData: () => invoke('browsing:clear'),
@@ -131,6 +128,15 @@ contextBridge.exposeInMainWorld('neira', {
         onChanged: on('parental:changed'),
         onUsage: on('parental:usage'),
         onBlocked: on('parental:blocked')
+    },
+
+    tracker: {
+        status: host => invoke('tracker:status', host),
+        setEnabled: on_ => invoke('tracker:set-enabled', on_),
+        allowSite: host => invoke('tracker:allow-site', host),
+        disallowSite: host => invoke('tracker:disallow-site', host),
+        clearCounts: () => invoke('tracker:clear-counts'),
+        onBlocked: on('tracker:blocked')
     },
     extensions: {
         load: () => invoke('extensions:load'),
