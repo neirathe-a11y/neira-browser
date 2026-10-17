@@ -29,7 +29,9 @@
     const railTabsList = $('rail-tabs-list');
     const tabCtx = $('tab-ctx');
     const groupPop = $('group-pop');
-    const pageCtx = $('page-ctx');
+       const pageCtx = $('page-ctx');
+    const railCtx = $('rail-ctx');
+    const sweepBtn = $('sweep-btn');
 
     const trackerShield = $('tracker-shield');
     const trackerPop = $('tracker-pop');
@@ -142,6 +144,13 @@
         if (!m) return null;
         let name = m[1].toLowerCase();
         if (name === 'newtab') return NEWTAB_URL + (m[2] || '');
+        if (name === 'import') {
+            // Trigger the wizard on next tick, then no-op the URL
+            setTimeout(() => {
+                try { window.neiraImport && window.neiraImport.open(); } catch (_) {}
+            }, 50);
+            return 'about:blank';
+        }
         name = ALIASES[name] || name;
         return SECTIONS.includes(name) ? PAGES_URL + '#' + name : null;
     }
@@ -172,10 +181,32 @@
         }
         return settings.engine + encodeURIComponent(s);
     }
+        let topDragFrom = null;
+
+    function clearTopDropMarkers() {
+        document.querySelectorAll('.tab.drop-before, .tab.drop-after').forEach(n => {
+            n.classList.remove('drop-before', 'drop-after');
+        });
+    }
+
+    function reorderTopTab(fromId, toId, before) {
+        const fromIdx = tabs.findIndex(t => t.id === fromId);
+        if (fromIdx === -1) return;
+        const [moved] = tabs.splice(fromIdx, 1);
+        const toIdx = tabs.findIndex(t => t.id === toId);
+        if (toIdx === -1) { tabs.splice(fromIdx, 0, moved); return; }
+        const insertAt = before ? toIdx : toIdx + 1;
+        tabs.splice(insertAt, 0, moved);
+        // Re-append all tab elements in the new order
+        for (const t of tabs) tabsListEl.appendChild(t.el);
+        renderRail();
+    }
+
 
     // -----------------------------------------------------------------------
     // Rail rendering
     // -----------------------------------------------------------------------
+
     let railDragFrom = null;
 
     function renderRail() {
@@ -360,6 +391,40 @@
             openTabContextMenu(id, e.clientX, e.clientY);
         });
         close.addEventListener('click', e => { e.stopPropagation(); closeTab(id); });
+                // ---- drag to reorder ----
+        el.draggable = true;
+        el.addEventListener('dragstart', e => {
+            topDragFrom = id;
+            e.dataTransfer.effectAllowed = 'move';
+            e.dataTransfer.setData('text/plain', id);
+            el.classList.add('dragging');
+        });
+        el.addEventListener('dragend', () => {
+            topDragFrom = null;
+            el.classList.remove('dragging');
+            clearTopDropMarkers();
+        });
+        el.addEventListener('dragover', e => {
+            if (!topDragFrom || topDragFrom === id) return;
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            const r = el.getBoundingClientRect();
+            const before = e.clientX < r.left + r.width / 2;
+            el.classList.toggle('drop-before', before);
+            el.classList.toggle('drop-after', !before);
+        });
+        el.addEventListener('dragleave', () => {
+            el.classList.remove('drop-before', 'drop-after');
+        });
+        el.addEventListener('drop', e => {
+            e.preventDefault();
+            el.classList.remove('drop-before', 'drop-after');
+            if (!topDragFrom || topDragFrom === id) return;
+            const r = el.getBoundingClientRect();
+            const before = e.clientX < r.left + r.width / 2;
+            reorderTopTab(topDragFrom, id, before);
+            topDragFrom = null;
+        });
 
         const wv = document.createElement('webview');
         wv.setAttribute('src', withPrivateFlag(target));
@@ -940,6 +1005,89 @@
         tabCtx.replaceChildren();
         ctxTabId = null;
     }
+        let ctxRailOpen = false;
+
+    function closeRailCtx() {
+        if (!railCtx || railCtx.hidden) return;
+        railCtx.hidden = true;
+        railCtx.replaceChildren();
+        ctxRailOpen = false;
+    }
+
+    function layoutSwitcherEntry() {
+        const isVertical = root.classList.contains('vertical-tabs');
+        return {
+            label: isVertical ? 'Switch to horizontal tabs' : 'Switch to vertical tabs',
+            run: () => runAction('toggle_vertical_tabs')
+        };
+    }
+
+    function openRailContextMenu(x, y) {
+        if (!railCtx) return;
+        closeDropdown(false);
+        closeProfilePop(false);
+        closeTabCtx();
+        closeGroupPop();
+        closePageCtx();
+        closeTrackerPop();
+        railCtx.replaceChildren();
+
+        const add = (label, run, opts = {}) => {
+            const b = document.createElement('button');
+            b.className = 'ctx-item';
+            b.type = 'button';
+            b.setAttribute('role', 'menuitem');
+            if (opts.disabled) b.disabled = true;
+            const left = document.createElement('span');
+            left.textContent = label;
+            b.appendChild(left);
+            if (opts.hint) {
+                const h = document.createElement('span');
+                h.className = 'ctx-hint';
+                h.textContent = opts.hint;
+                b.appendChild(h);
+            }
+            b.addEventListener('click', () => { closeRailCtx(); run(); });
+            railCtx.appendChild(b);
+        };
+        const sep = () => {
+            const s = document.createElement('div');
+            s.className = 'ctx-sep';
+            railCtx.appendChild(s);
+        };
+        const header = text => {
+            const h = document.createElement('div');
+            h.className = 'ctx-header';
+            h.textContent = text;
+            railCtx.appendChild(h);
+        };
+
+        header('Browser');
+
+        add('New tab', () => runAction('new_tab'), { hint: shortcutMap.new_tab || '' });
+        add('Search tabs', () => openTabSearch(), { hint: shortcutMap.search_tabs || '' });
+        sep();
+        add('Downloads', () => runAction('show_downloads'));
+        add('History', () => runAction('show_history'));
+        add('Neira Sweep', () => runAction('open_sweep'));
+        sep();
+
+        const ls = layoutSwitcherEntry();
+        add(ls.label, ls.run);
+
+        sep();
+        add('Settings', () => runAction('show_settings'));
+        add('Keyboard shortcuts', () => runAction('show_shortcuts'));
+
+        railCtx.hidden = false;
+        const r = railCtx.getBoundingClientRect();
+        railCtx.style.left = Math.max(8, Math.min(x, window.innerWidth - r.width - 8)) + 'px';
+        railCtx.style.top = Math.max(8, Math.min(y, window.innerHeight - r.height - 8)) + 'px';
+        const first = railCtx.querySelector('.ctx-item:not(:disabled)');
+        if (first) first.focus();
+        ctxRailOpen = true;
+    }
+
     function closeGroupPop() {
         if (!groupPop || groupPop.hidden) return;
         groupPop.hidden = true;
@@ -995,6 +1143,7 @@
 
         add('New tab to the right', '', () => {
             createTab(newTabUrl(), { after: tab.id, activate: false });
+                    api.rendererReady();
         });
         add('Reload', shortcutMap.reload || '', () => {
             if (tab.ready) tab.webview.reload();
@@ -1035,6 +1184,9 @@
                 api.bookmarks.toggle({ url: tab.url, title: tab.title });
             }
         });
+                sep();
+        const lsTab = layoutSwitcherEntry();
+        add(lsTab.label, '', lsTab.run);
 
         tabCtx.hidden = false;
         const r = tabCtx.getBoundingClientRect();
@@ -1242,6 +1394,9 @@
 
         add('View page source', 'Ctrl+U', () => viewSource());
         add('Inspect', '', () => devtools('open'));
+                sep();
+        const lsPage = layoutSwitcherEntry();
+        add(lsPage.label, '', lsPage.run);
 
         pageCtx.hidden = false;
         const r = pageCtx.getBoundingClientRect();
@@ -3250,7 +3405,8 @@
         { id: 'show_history',         label: 'Open history',              hint: '',         icon: '🕘' },
         { id: 'show_bookmark_manager',label: 'Open bookmarks',            hint: '',         icon: '★' },
         { id: 'show_downloads',       label: 'Open downloads',            hint: '',         icon: '⤓' },
-        { id: 'open_extensions',      label: 'Open extensions',           hint: '',         icon: '🧩' }
+        { id: 'open_extensions',      label: 'Open extensions',           hint: '',         icon: '🧩' },
+        { id: 'open_sweep',           label: 'Open Neira Sweep',          hint: '',         icon: '🧹' },
     ];
 
     function cmdkBuild(query) {
@@ -3802,9 +3958,10 @@
         move_tab_backward: () => moveTab(-1),
         search_tabs: openTabSearch,
         duplicate_tab: duplicateTab,
-        close_other_tabs: closeOtherTabs,
+                close_other_tabs: closeOtherTabs,
         close_tabs_right: closeTabsToRight,
         reload_all_tabs: reloadAllTabs,
+        open_sweep: () => openSweepSidebar(),
 
         go_back: () => {
             const t = activeTab();
@@ -3913,6 +4070,7 @@
         'bookmark-btn': ['Bookmark page', 'bookmark_curr'],
         'assistant-btn': ['Assistant', 'toggle_assistant'],
         'history-toggle': ['History', 'show_history'],
+        'sweep-btn': ['Neira Sweep', 'open_sweep'],
         'downloads-btn': ['Downloads', 'show_downloads'],
         'avatar-btn': ['Profile', 'show_avatar_menu'],
         'menu-btn': ['Menu', 'show_app_menu']
@@ -4020,10 +4178,20 @@
         if (lastRequest) runSummary(lastRequest.selected);
     });
     $('history-toggle').addEventListener('click', () => openInternal('history'));
+    if (sweepBtn) sweepBtn.addEventListener('click', openSweepSidebar);
     $('downloads-btn').addEventListener('click', dlToggle);
     avatarBtn.addEventListener('click', openAvatarMenu);
     menuBtn.addEventListener('click', openAppMenu);
     bookmarkBtn.addEventListener('click', toggleBookmark);
+    const railEl = $('rail');
+    if (railEl) {
+        railEl.addEventListener('contextmenu', e => {
+            // Let a specific rail-tab's own context menu handle it (openTabContextMenu)
+            if (e.target.closest('.rail-tab')) return;
+            e.preventDefault();
+            openRailContextMenu(e.clientX, e.clientY);
+        });
+    }
 
     const railCollapse = $('rail-collapse');
     if (railCollapse) railCollapse.addEventListener('click', () => {
@@ -4093,6 +4261,7 @@
 
     document.addEventListener('mousedown', e => {
         if (tabCtx && !tabCtx.hidden && !tabCtx.contains(e.target)) closeTabCtx();
+        if (railCtx && !railCtx.hidden && !railCtx.contains(e.target)) closeRailCtx();
         if (groupPop && !groupPop.hidden && !groupPop.contains(e.target)) closeGroupPop();
         if (pageCtx && !pageCtx.hidden && !pageCtx.contains(e.target)) closePageCtx();
     }, true);
@@ -4100,6 +4269,7 @@
     document.addEventListener('keydown', e => {
         if (e.key !== 'Escape') return;
         if (tabCtx && !tabCtx.hidden) { e.preventDefault(); closeTabCtx(); return; }
+        if (railCtx && !railCtx.hidden) { e.preventDefault(); closeRailCtx(); return; }
         if (groupPop && !groupPop.hidden) { e.preventDefault(); closeGroupPop(); return; }
         if (pageCtx && !pageCtx.hidden) { e.preventDefault(); closePageCtx(); return; }
     });
@@ -4147,14 +4317,325 @@
         api.onModifierReleased(commitCycle);
         api.onOpenInput(openFromPage);
         api.onSummarizeText(text => runSummary(text && text.trim() ? text : null));
-        api.onOpenUrl((url, opts) => createTab(url, { activate: !(opts && opts.background), resolved: /^file:/i.test(url) }));
+        api.onOpenUrl((url, opts) => {
+            const startTab = opts && opts.replaceStartTab && tabs.length === 1 && tabs[0].isNewtab ? tabs[0] : null;
+            createTab(url, { activate: !(opts && opts.background), resolved: /^file:/i.test(url) });
+            if (startTab) closeTab(startTab.id);
+        });
         api.settings.onChange(next => { settings = next; applyUi(); renderBookmarks(); syncAISheet(); });
         api.shortcuts.onChange(({ map }) => { shortcutMap = map; applyHints(); });
         api.bookmarks.onChange(list => { bookmarks = list; renderBookmarks(); updateStar(); });
+    createTab(newTabUrl());
+        maybeShowImportWizard();
+    }
+    // -----------------------------------------------------------------------
+    // Neira Sweep sidebar
+    // -----------------------------------------------------------------------
+    const sweepPanel = $('sweep-panel');
+    const sweepRescan = $('sweep-rescan');
+    const sweepClose = $('sweep-close');
+    const sweepGauge = $('sweep-gauge');
+    const sweepCats = $('sweep-cats');
+    const sweepLog = $('sweep-log');
+    const sweepNum = $('sweep-num');
+    const sweepUnit = $('sweep-unit');
+    const sweepSub = $('sweep-sub');
+    const sweepSummary = $('sweep-summary');
+    const sweepFoot = $('sweep-foot');
+    const sweepStatDl = $('sweep-stat-dl');
+    const sweepStatCk = $('sweep-stat-ck');
+    const sweepFab = $('sweep-fab');
+    const sweepFabLabel = $('sweep-fab-label');
+    const sweepConfirm = $('sweep-confirm');
+    const sweepConfirmBody = $('sweep-confirm-body');
 
-        createTab(newTabUrl());
+    const SWEEP_CATEGORIES = [
+        { id: 'cache',     label: 'Cache',               desc: 'Temporary files from websites' },
+        { id: 'cookies',   label: 'Cookies & site data', desc: 'Login state kept by websites' },
+        { id: 'tabs',      label: 'Open tabs',           desc: 'Close every tab except this one' },
+        { id: 'history',   label: 'Browsing history',    desc: 'Pages you have visited' },
+        { id: 'downloads', label: 'Downloads list',      desc: 'Filenames only, not the files themselves' },
+        { id: 'ai',        label: 'Local AI cache',      desc: 'Downloaded AI models on this device' }
+    ];
+    const SWEEP_DEFAULT_ON = {
+        light:    ['cache'],
+        standard: ['cache', 'cookies', 'history', 'downloads'],
+        deep:     ['cache', 'cookies', 'tabs', 'history', 'downloads', 'ai']
+    };
+    const SWEEP_SEGMENTS = 40;
+
+    let sweepLevel = 'standard';
+    let sweepSelected = new Set(SWEEP_DEFAULT_ON[sweepLevel]);
+    let sweepScan = null;
+    let sweepBusy = false;
+    let sweepShownBytes = 0;
+    let sweepRaf = 0;
+
+    const sweepBytesOf = id => (sweepScan && sweepScan.categories[id] && sweepScan.categories[id].bytes) || 0;
+    const sweepSelTotal = () => { let n = 0; for (const id of sweepSelected) n += sweepBytesOf(id); return n; };
+    const sweepAllTotal = () => SWEEP_CATEGORIES.reduce((n, c) => n + sweepBytesOf(c.id), 0);
+
+    function sweepFmt(n) {
+        if (!n || n < 0) return '0 MB';
+        if (n < 1024) return n + ' B';
+        if (n < 1024 * 1024) return (n / 1024).toFixed(0) + ' KB';
+        if (n < 1024 * 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + ' MB';
+        return (n / (1024 * 1024 * 1024)).toFixed(2) + ' GB';
+    }
+    function sweepFmtShort(n) {
+        if (!n || n < 0) return { num: '0', unit: 'MB' };
+        if (n < 1024 * 1024) return { num: (n / 1024).toFixed(0), unit: 'KB' };
+        if (n < 1024 * 1024 * 1024) return { num: (n / (1024 * 1024)).toFixed(1), unit: 'MB' };
+        return { num: (n / (1024 * 1024 * 1024)).toFixed(2), unit: 'GB' };
     }
 
-    init();
+    function sweepLogLine(kind, msg) {
+        if (!sweepLog) return;
+        const line = document.createElement('div');
+        const t = document.createElement('span'); t.className = 't';
+        t.textContent = new Date().toLocaleTimeString([], { hour12: false });
+        const tag = document.createElement('span'); tag.className = 'tag ' + kind;
+        tag.textContent = '[' + kind + ']';
+        const m = document.createElement('span'); m.textContent = msg;
+        line.append(t, tag, m);
+        sweepLog.appendChild(line);
+        sweepLog.scrollTop = sweepLog.scrollHeight;
+        while (sweepLog.children.length > 60) sweepLog.firstChild.remove();
+    }
 
+    // Build the gauge segments once
+    const sweepSegs = [];
+    if (sweepGauge) {
+        for (let i = 0; i < SWEEP_SEGMENTS; i++) {
+            const s = document.createElement('i');
+            s.style.animationDelay = (-1.4 + (i / SWEEP_SEGMENTS) * 1.4).toFixed(3) + 's';
+            sweepGauge.appendChild(s);
+            sweepSegs.push(s);
+        }
+    }
+
+    function sweepPaintGauge() {
+        const all = sweepAllTotal(), sel = sweepSelTotal();
+        const ratio = all ? sel / all : 0;
+        const lit = Math.round(ratio * SWEEP_SEGMENTS);
+        sweepSegs.forEach((s, i) => s.classList.toggle('on', i < lit));
+        sweepSub.textContent = all ? `of ${sweepFmt(all)} found · ${Math.round(ratio * 100)}%` : 'nothing found';
+    }
+
+    function sweepPaintBytes(b) {
+        const s = sweepFmtShort(b);
+        if (sweepNum) sweepNum.textContent = s.num;
+        if (sweepUnit) sweepUnit.textContent = s.unit;
+    }
+
+    function sweepAnimateTo(target) {
+        cancelAnimationFrame(sweepRaf);
+        const from = sweepShownBytes, start = performance.now(), dur = 500;
+        const tick = now => {
+            const t = Math.min(1, (now - start) / dur);
+            sweepShownBytes = from + (target - from) * (1 - Math.pow(1 - t, 3));
+            sweepPaintBytes(sweepShownBytes);
+            if (t < 1) sweepRaf = requestAnimationFrame(tick);
+        };
+        sweepRaf = requestAnimationFrame(tick);
+    }
+
+    function sweepRenderCats() {
+        if (!sweepCats) return;
+        sweepCats.replaceChildren();
+        const all = sweepAllTotal();
+        for (const c of SWEEP_CATEGORIES) {
+            const info = (sweepScan && sweepScan.categories[c.id]) || { bytes: 0, count: 0 };
+            const on = sweepSelected.has(c.id);
+
+            const el = document.createElement('button');
+            el.type = 'button';
+            el.className = 'sp-row' + (on ? ' on' : '');
+            el.setAttribute('role', 'checkbox');
+            el.setAttribute('aria-checked', String(on));
+            el.addEventListener('click', () => {
+                if (sweepBusy) return;
+                if (sweepSelected.has(c.id)) sweepSelected.delete(c.id);
+                else sweepSelected.add(c.id);
+                sweepRefresh();
+            });
+
+            const chk = document.createElement('span');
+            chk.className = 'sp-chk';
+            chk.textContent = on ? '[x]' : '[ ]';
+
+            const inf = document.createElement('div');
+            inf.style.minWidth = '0';
+            const h = document.createElement('h3'); h.textContent = c.label;
+            const p = document.createElement('p'); p.textContent = c.desc;
+            inf.append(h, p);
+
+            const size = document.createElement('span');
+            size.className = 'sp-size';
+            size.textContent = info.bytes ? sweepFmt(info.bytes) : info.count ? info.count + ' items' : '—';
+
+            el.append(chk, inf, size);
+            sweepCats.appendChild(el);
+        }
+    }
+
+    function sweepUpdateSubs() {
+        const d = (sweepScan && sweepScan.categories.downloads) || { bytes: 0 };
+        const c = (sweepScan && sweepScan.categories.cookies) || { count: 0 };
+        if (sweepStatDl) sweepStatDl.textContent = sweepFmt(d.bytes || 0);
+        if (sweepStatCk) sweepStatCk.textContent = String(c.count || 0);
+    }
+
+    function sweepUpdateFab() {
+        const n = sweepSelected.size;
+        if (sweepFab) sweepFab.disabled = !n || sweepBusy;
+        if (sweepFabLabel) sweepFabLabel.textContent = sweepBusy ? 'Sweeping…' : n ? `Sweep ${n} ${n === 1 ? 'target' : 'targets'}` : 'Nothing selected';
+        if (sweepSummary) sweepSummary.textContent = `${n}/${SWEEP_CATEGORIES.length} targets`;
+        if (sweepFoot) sweepFoot.textContent = `${n} of ${SWEEP_CATEGORIES.length} · ${sweepFmt(sweepSelTotal())}`;
+    }
+
+    function sweepRefresh() {
+        sweepRenderCats();
+        sweepPaintGauge();
+        sweepAnimateTo(sweepSelTotal());
+        sweepUpdateFab();
+    }
+
+    function sweepSetLevel(l) {
+        if (sweepBusy) return;
+        sweepLevel = l;
+        const box = $('sweep-levels');
+        if (box) for (const x of box.querySelectorAll('button')) {
+            const on = x.dataset.level === l;
+            x.classList.toggle('active', on);
+            x.setAttribute('aria-checked', String(on));
+        }
+        sweepSelected = new Set(SWEEP_DEFAULT_ON[l]);
+        sweepLogLine('info', `intensity ${l} → ${sweepSelected.size} ${sweepSelected.size === 1 ? 'target' : 'targets'}`);
+        sweepRefresh();
+    }
+
+    async function sweepDoScan(why) {
+        try {
+            sweepScan = await api.sweep.scan();
+            sweepLogLine('ok', `${why} complete — ${sweepFmt(sweepAllTotal())} found`);
+        } catch (_) {
+            sweepScan = null;
+            sweepLogLine('warn', `${why} failed — sizes unavailable`);
+        }
+        sweepUpdateSubs();
+        sweepRefresh();
+    }
+
+    function sweepConfirmSweep() {
+        const names = SWEEP_CATEGORIES.filter(c => sweepSelected.has(c.id)).map(c => c.label).join(', ');
+        if (sweepConfirmBody) {
+            sweepConfirmBody.textContent = `Clear ${names} (about ${sweepFmt(sweepSelTotal())}). Bookmarks, saved passwords, and downloaded files are kept.`;
+        }
+        return new Promise(resolve => {
+            sweepConfirm.hidden = false;
+            const done = ok => {
+                sweepConfirm.hidden = true;
+                $('sweep-confirm-ok').removeEventListener('click', yes);
+                $('sweep-confirm-cancel').removeEventListener('click', no);
+                resolve(ok);
+            };
+            const yes = () => done(true);
+            const no  = () => done(false);
+            $('sweep-confirm-ok').addEventListener('click', yes);
+            $('sweep-confirm-cancel').addEventListener('click', no);
+        });
+    }
+
+    async function sweepRun() {
+        if (sweepBusy || sweepSelected.size === 0) return;
+        const ok = await sweepConfirmSweep();
+        if (!ok) { sweepLogLine('info', 'sweep cancelled'); return; }
+
+        sweepBusy = true;
+        sweepPanel.classList.add('cleaning');
+        const ids = Array.from(sweepSelected);
+        sweepLogLine('info', `sweep started · intensity ${sweepLevel} · ${ids.join(', ')}`);
+        sweepUpdateFab();
+
+        let freed = 0, count = ids.length, failed = false;
+        try {
+            const r = await api.sweep.run(ids, sweepLevel);
+            freed = (r && r.freed) || 0;
+            count = (r && r.cleared) || ids.length;
+        } catch (_) { failed = true; }
+
+        sweepBusy = false;
+        sweepPanel.classList.remove('cleaning');
+        if (failed) sweepLogLine('warn', 'sweep did not report a result — rescanning');
+        else sweepLogLine('ok', `sweep finished — freed about ${sweepFmt(freed)} across ${count} ${count === 1 ? 'item' : 'items'}`);
+
+        await sweepDoScan('rescan');
+    }
+
+    function openSweepSidebar() {
+        if (!sweepPanel) return;
+        const opening = sweepPanel.hidden;
+        sweepPanel.hidden = !opening;
+        if (opening) {
+            // Load scan on first open
+            if (!sweepScan) sweepDoScan('scan');
+            else sweepRefresh();
+        } else {
+            focusWebContents();
+        }
+    }
+
+    if (sweepRescan) sweepRescan.addEventListener('click', () => { if (!sweepBusy) sweepDoScan('rescan'); });
+    if (sweepClose) sweepClose.addEventListener('click', () => {
+        if (!sweepPanel.hidden) openSweepSidebar();
+    });
+    if (sweepFab) sweepFab.addEventListener('click', sweepRun);
+    const sweepLevelsBox = $('sweep-levels');
+    if (sweepLevelsBox) {
+        sweepLevelsBox.addEventListener('click', e => {
+            const b = e.target.closest('button[data-level]');
+            if (b) sweepSetLevel(b.dataset.level);
+        });
+    }
+
+    // Keyboard inside the sweep panel: 1/2/3, r, s
+    document.addEventListener('keydown', e => {
+        if (!sweepPanel || sweepPanel.hidden) return;
+        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+        if (e.metaKey || e.ctrlKey || e.altKey) return;
+        if (sweepBusy) return;
+        if (!sweepConfirm.hidden) return;
+        const k = e.key.toLowerCase();
+        if (k === '1') sweepSetLevel('light');
+        else if (k === '2') sweepSetLevel('standard');
+        else if (k === '3') sweepSetLevel('deep');
+        else if (k === 'r') sweepDoScan('rescan');
+        else if (k === 's') sweepRun();
+    });
+
+    // Hook the rail sweep button
+    const railSweep = $('rail-sweep');
+        if (railSweep) railSweep.addEventListener('click', openSweepSidebar);
+
+    // ---------- Import wizard: show on first launch ----------
+    function maybeShowImportWizard() {
+        if (PRIVATE) return;
+        if (settings.hasSeenImport === true) return;
+        if (!window.neiraImport || !window.neiraImport.open) return;
+        setTimeout(() => {
+            try { window.neiraImport.open(); } catch (_) {}
+        }, 350);
+    }
+
+    // ---------- Import wizard: URL trigger ----------
+    // Typing neira://import in the address bar opens the wizard.
+    window.addEventListener('hashchange', () => {
+        if (location.hash === '#open-import') {
+            location.hash = '';
+            try { window.neiraImport && window.neiraImport.open(); } catch (_) {}
+        }
+    });
+
+    init();
 })();

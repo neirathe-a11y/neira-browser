@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@aptabase/electron": "^0.3.1",
+    "better-sqlite3": "^13.0.3",
     "electron-updater": "^6.1.7"
   },
   "devDependencies": {
@@ -42,7 +43,8 @@
       }
     ]
   },
-  "allowScripts": [
-    "electron"
-  ]
+  "allowScripts": {
+    "0": "electron",
+    "better-sqlite3@12.11.1": true
+  }
 }

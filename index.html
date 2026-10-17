@@ -146,6 +146,7 @@
         }
 
         /* ==================== Rail ==================== */
+        /* ==================== Rail (vertical tab strip) ==================== */
         .rail {
             display: none;
             width: var(--rail-width);
@@ -153,79 +154,174 @@
             background: var(--bg-toolbar);
             border-right: 1px solid var(--border-color);
             flex-direction: column;
-            align-items: center;
-            padding: 42px 0 8px 0;
-            gap: 4px;
-            transition: width 0.18s cubic-bezier(0.4, 0, 0.2, 1);
+            align-items: stretch;
+            padding: 42px 6px 8px 6px;
+            gap: 2px;
+            transition: width 0.2s cubic-bezier(0.4, 0, 0.2, 1);
             overflow: hidden;
             -webkit-app-region: drag;
         }
         :root.vertical-tabs .rail { display: flex; }
-        :root.vertical-tabs.rail-expanded .rail { width: var(--rail-expanded-width); align-items: stretch; padding: 42px 8px 8px 8px; }
+        :root.vertical-tabs.rail-expanded .rail {
+            width: var(--rail-expanded-width);
+            padding: 42px 10px 10px 10px;
+        }
 
+        /* ---- Rail buttons (Collapse, Tabs, Sweep, Downloads, New, More) ---- */
         .rail-btn {
-            width: var(--btn-size);
-            height: var(--btn-size);
-            display: grid;
-            place-items: center;
+            width: 100%;
+            min-height: 34px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
             background: transparent;
             border: none;
             border-radius: 8px;
             color: var(--text-muted);
             cursor: pointer;
-            transition: all 0.15s ease;
+            transition: background 0.15s ease, color 0.15s ease;
             -webkit-app-region: no-drag;
             flex: none;
+            padding: 6px 8px;
+            font-family: inherit;
+            font-size: 12.5px;
+            font-weight: 500;
+            text-align: left;
+            position: relative;
+        }
+        .rail-btn:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--text-main); }
+        .rail-btn.active {
+            background: color-mix(in srgb, var(--accent) 16%, transparent);
+            color: var(--accent);
+        }
+        .rail-btn svg {
+            width: 16px;
+            height: 16px;
+            fill: currentColor;
+            flex: none;
+            opacity: 0.85;
+            transition: opacity 0.15s ease, transform 0.15s ease;
+        }
+        .rail-btn:hover svg { opacity: 1; }
+        .rail-btn .rail-label {
+            display: none;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            flex: 1;
+            min-width: 0;
         }
         :root.vertical-tabs.rail-expanded .rail-btn {
-            width: auto;
-            height: auto;
-            padding: 6px 8px;
             justify-content: flex-start;
-            grid-auto-flow: column;
-            gap: 10px;
         }
-        .rail-btn:hover { background: rgba(0, 240, 255, 0.1); color: var(--accent); }
-        .rail-btn.active { background: rgba(0, 240, 255, 0.15); color: var(--accent); }
-        .rail-btn svg { width: 16px; height: 16px; fill: currentColor; flex: none; }
-        .rail-btn .rail-label { display: none; font-size: 12px; white-space: nowrap; }
-        :root.vertical-tabs.rail-expanded .rail-btn .rail-label { display: inline; }
+        :root.vertical-tabs.rail-expanded .rail-btn .rail-label {
+            display: block;
+        }
+
+        /* ---- Divider between top buttons and tabs list ---- */
+        .rail-divider {
+            height: 1px;
+            background: var(--border-color);
+            margin: 6px 4px;
+            flex: none;
+            opacity: 0.6;
+        }
 
         .rail-spacer { flex: 1; min-height: 8px; }
 
+        /* ---- Rail tabs list ---- */
         .rail-tabs {
             display: flex;
             flex-direction: column;
             gap: 2px;
-            padding: 6px 0;
+            padding: 4px 0;
             overflow-y: auto;
-            scrollbar-width: none;
-            flex: none;
-            max-height: 60vh;
+            overflow-x: hidden;
+            scrollbar-width: thin;
+            flex: 1 1 auto;
+            min-height: 0;
             -webkit-app-region: no-drag;
         }
-        .rail-tabs::-webkit-scrollbar { display: none; }
+        .rail-tabs::-webkit-scrollbar { width: 6px; }
+        .rail-tabs::-webkit-scrollbar-thumb {
+            background: color-mix(in srgb, var(--text-main) 15%, transparent);
+            border-radius: 3px;
+        }
+        .rail-tabs::-webkit-scrollbar-track { background: transparent; }
+
+        /* ---- Individual tab row ---- */
         .rail-tab {
-            width: 32px;
-            height: 32px;
-            display: grid;
-            place-items: center;
+            width: 100%;
+            min-height: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
             border-radius: 8px;
             background: transparent;
             border: none;
             color: var(--text-muted);
-            font-size: 12px;
-            font-weight: 700;
+            font-size: 12.5px;
+            font-weight: 500;
+            font-family: inherit;
             cursor: pointer;
-            transition: all 0.15s ease;
+            transition: background 0.12s ease, color 0.12s ease;
             flex: none;
-            align-self: center;
             -webkit-app-region: no-drag;
             position: relative;
+            padding: 5px 8px;
+            text-align: left;
         }
-        .rail-tab:hover { background: rgba(0, 240, 255, 0.1); }
-        .rail-tab.active { background: rgba(0, 240, 255, 0.18); color: var(--accent); }
-        .rail-tab img { width: 16px; height: 16px; border-radius: 3px; flex: none; }
+        .rail-tab:hover {
+            background: color-mix(in srgb, var(--text-main) 6%, transparent);
+            color: var(--text-main);
+        }
+        .rail-tab.active {
+            background: color-mix(in srgb, var(--accent) 14%, transparent);
+            color: var(--text-main);
+        }
+        .rail-tab.active::before {
+            content: "";
+            position: absolute;
+            left: -6px;
+            top: 6px;
+            bottom: 6px;
+            width: 3px;
+            border-radius: 0 3px 3px 0;
+            background: var(--accent);
+            box-shadow: 0 0 8px var(--accent);
+        }
+        .rail-tab img,
+        .rail-tab > span:first-child {
+            flex: none;
+            width: 16px;
+            height: 16px;
+            display: grid;
+            place-items: center;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 700;
+        }
+        .rail-tab img { object-fit: contain; }
+
+        /* In collapsed mode, center the icon */
+        :root.vertical-tabs:not(.rail-expanded) .rail-tab {
+            justify-content: center;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+            min-height: 32px;
+            align-self: center;
+        }
+        :root.vertical-tabs:not(.rail-expanded) .rail-btn {
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            min-height: 32px;
+            padding: 0;
+            align-self: center;
+        }
 
         .app-body {
             flex: 1;
@@ -246,7 +342,9 @@
             overflow: hidden;
             -webkit-app-region: drag;
             flex: none;
+            
         }
+        
         :root.vertical-tabs .tab-bar { display: none; }
 
         #tabs-list {
@@ -301,6 +399,22 @@
             color: var(--text-main);
             border-color: var(--border-color);
         }
+                .tab.dragging { opacity: 0.35; }
+        .tab.drop-before::before,
+        .tab.drop-after::after {
+            content: "";
+            position: absolute;
+            top: 4px;
+            bottom: 4px;
+            width: 2px;
+            background: var(--accent);
+            border-radius: 2px;
+            box-shadow: 0 0 8px var(--accent);
+            pointer-events: none;
+        }
+        .tab.drop-before::before { left: -2px; }
+        .tab.drop-after::after  { right: -2px; }
+        .tab { position: relative; }
         .tab-favicon { width: 14px; height: 14px; flex: none; border-radius: 2px; }
         .tab-spinner {
             width: 12px; height: 12px; flex: none;
@@ -783,7 +897,151 @@
         :root.light-theme .as-sub { color: color-mix(in srgb, var(--accent) 75%, #000 25%); }
         :root.light-theme .as-md h4 { color: color-mix(in srgb, var(--accent) 75%, #000 25%); }
         :root.light-theme .as-md code { color: color-mix(in srgb, var(--accent) 75%, #000 25%); }
+        /* ==================== Neira Sweep sidebar ==================== */
+        .sweep-panel {
+            width: 400px;
+            flex: none;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+            background: color-mix(in srgb, var(--bg-toolbar) 96%, transparent);
+            border-right: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border-color));
+            box-shadow: 8px 0 30px rgba(0, 0, 0, 0.35), 2px 0 15px color-mix(in srgb, var(--accent) 15%, transparent);
+            animation: sweepIn 0.22s cubic-bezier(0.22, 1, 0.36, 1) both;
+            color: var(--text-main);
+            font-family: ui-monospace, "JetBrains Mono", Consolas, monospace;
+            font-size: 13px;
+            position: relative;
+            z-index: 24;
+        }
+        @keyframes sweepIn {
+            from { opacity: 0; transform: translateX(-22px); }
+            to   { opacity: 1; transform: none; }
+        }
+        .sweep-panel .sp-head {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 12px 16px;
+            background: color-mix(in srgb, var(--bg-tab-active) 92%, transparent);
+            border-bottom: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border-color));
+            position: relative;
+        }
+        .sweep-panel .sp-head::after {
+            content: ""; position: absolute; bottom: -1px; left: 0; right: 0; height: 2px;
+            background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 60%, #7000ff), color-mix(in srgb, var(--accent) 40%, #ff0077));
+            animation: cyberLineGlow 3s ease-in-out infinite alternate;
+        }
+        .sweep-panel .sp-title { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: 0.1em; }
+        .sweep-panel .sp-logo {
+            width: 28px; height: 28px; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center;
+            font-size: 14px;
+            background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 40%, #7000ff));
+            color: var(--on-accent);
+            box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 60%, transparent);
+        }
+        .sweep-panel .sp-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 14px; scrollbar-width: thin; }
+        .sweep-panel .sp-intro { color: var(--text-muted); line-height: 1.55; font-size: 12px; }
+        .sweep-panel .sp-card { border: 1px solid var(--border-color); background: color-mix(in srgb, var(--bg-tab) 92%, transparent); border-radius: 10px; overflow: hidden; }
+        .sweep-panel .sp-card-h { display: flex; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid var(--border-color); color: var(--text-muted); font-size: 11px; letter-spacing: 0.05em; }
+        .sweep-panel .sp-card-b { padding: 14px 12px; }
 
+        /* Big number */
+        .sweep-panel .sp-big { display: flex; align-items: baseline; gap: 8px; }
+        .sweep-panel .sp-num { font-size: 44px; font-weight: 700; letter-spacing: -0.04em; line-height: 1; font-variant-numeric: tabular-nums; color: var(--text-main); }
+        .sweep-panel .sp-unit { font-size: 16px; color: color-mix(in srgb, var(--accent) 60%, var(--text-main)); }
+        .sweep-panel .sp-sub { color: var(--text-muted); margin-top: 4px; font-size: 12px; }
+
+        /* Gauge */
+        .sweep-panel .sp-gauge { display: grid; grid-template-columns: repeat(40, 1fr); gap: 2px; height: 18px; margin: 12px 0 12px; }
+        .sweep-panel .sp-gauge i { background: color-mix(in srgb, var(--text-main) 12%, transparent); border-radius: 1px; transition: background 0.25s; }
+        .sweep-panel .sp-gauge i.on { background: var(--accent); box-shadow: 0 0 4px color-mix(in srgb, var(--accent) 60%, transparent); }
+        .sweep-panel.cleaning .sp-gauge i { animation: spScan 1.4s linear infinite; }
+        @keyframes spScan { 0%, 100% { background: color-mix(in srgb, var(--text-main) 12%, transparent); } 6% { background: var(--accent); } 24% { background: color-mix(in srgb, var(--text-main) 12%, transparent); } }
+
+        /* Stats */
+        .sweep-panel .sp-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; background: var(--border-color); border: 1px solid var(--border-color); border-radius: 6px; overflow: hidden; }
+        .sweep-panel .sp-stats div { background: color-mix(in srgb, var(--bg-tab) 92%, transparent); padding: 8px 10px; }
+        .sweep-panel .sp-stats b { display: block; font-size: 14px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--accent-text, color-mix(in srgb, var(--accent) 60%, var(--text-main))); }
+        .sweep-panel .sp-stats span { font-size: 10.5px; color: var(--text-muted); letter-spacing: 0.05em; text-transform: uppercase; }
+
+        /* Profiles / intensity */
+        .sweep-panel .sp-profiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; padding: 10px; }
+        .sweep-panel .sp-profiles button {
+            background: var(--bg-input); border: 1px solid var(--border-color); border-radius: 6px; padding: 8px 9px; cursor: pointer;
+            text-align: left; color: var(--text-main); font-family: inherit; font-size: 12px;
+            transition: border-color 0.15s, background 0.15s, color 0.15s;
+        }
+        .sweep-panel .sp-profiles button:hover { border-color: var(--text-muted); }
+        .sweep-panel .sp-profiles strong { display: flex; justify-content: space-between; font-weight: 700; font-size: 12px; }
+        .sweep-panel .sp-profiles small { display: block; font-size: 10.5px; color: var(--text-muted); margin-top: 3px; }
+        .sweep-panel .sp-profiles button.active {
+            background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 45%, #7000ff));
+            border-color: var(--accent); color: var(--on-accent);
+        }
+        .sweep-panel .sp-profiles button.active small { color: color-mix(in srgb, var(--on-accent) 80%, transparent); }
+
+        /* FAB */
+        .sweep-panel .sp-fab {
+            width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 12px;
+            padding: 13px 16px; border: 0; border-radius: 10px; cursor: pointer;
+            background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 45%, #7000ff));
+            color: var(--on-accent); font-weight: 800; font-size: 13px; font-family: inherit; letter-spacing: 0.04em;
+            transition: filter 0.15s, transform 0.15s;
+            box-shadow: 0 8px 20px -8px color-mix(in srgb, var(--accent) 60%, transparent);
+        }
+        .sweep-panel .sp-fab:hover:not(:disabled) { filter: brightness(1.1); transform: translateY(-1px); }
+        .sweep-panel .sp-fab:disabled { opacity: 0.45; cursor: not-allowed; }
+        .sweep-panel .sp-fab kbd {
+            font: inherit; font-size: 10.5px; padding: 2px 6px; border-radius: 4px;
+            border: 1px solid color-mix(in srgb, var(--on-accent) 45%, transparent);
+            color: inherit;
+        }
+
+        /* Log */
+        .sweep-panel .sp-log { height: 140px; overflow-y: auto; padding: 8px 12px; font-size: 11.5px; background: color-mix(in srgb, var(--bg-input) 90%, transparent); line-height: 1.7; }
+        .sweep-panel .sp-log div { display: flex; gap: 8px; }
+        .sweep-panel .sp-log .t { color: var(--text-muted); flex: none; }
+        .sweep-panel .sp-log .ok { color: #4ade80; }
+        .sweep-panel .sp-log .warn { color: #f59e0b; }
+        .sweep-panel .sp-log .info { color: color-mix(in srgb, var(--accent) 60%, var(--text-main)); }
+        .sweep-panel .sp-log .tag { flex: none; }
+
+        /* Targets */
+        .sweep-panel .sp-thead, .sweep-panel .sp-row {
+            display: grid; grid-template-columns: 28px minmax(0, 1fr) 70px; align-items: center; gap: 10px;
+            padding: 10px 12px;
+        }
+        .sweep-panel .sp-thead { padding-top: 6px; padding-bottom: 6px; color: var(--text-muted); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; border-bottom: 1px solid var(--border-color); }
+        .sweep-panel .sp-thead span:last-child { text-align: right; }
+        .sweep-panel .sp-row {
+            width: 100%; background: none; border: 0; border-bottom: 1px solid var(--border-color);
+            text-align: left; cursor: pointer; color: inherit; font-family: inherit;
+            box-shadow: inset 2px 0 0 transparent;
+            transition: background 0.12s, box-shadow 0.12s;
+        }
+        .sweep-panel .sp-row:last-child { border-bottom: none; }
+        .sweep-panel .sp-row:hover { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+        .sweep-panel .sp-row.on { box-shadow: inset 2px 0 0 var(--accent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+        .sweep-panel .sp-row .sp-chk { color: var(--text-muted); font-weight: 700; font-size: 12px; }
+        .sweep-panel .sp-row.on .sp-chk { color: color-mix(in srgb, var(--accent) 70%, var(--text-main)); }
+        .sweep-panel .sp-row h3 { font-size: 12.5px; font-weight: 600; color: var(--text-muted); }
+        .sweep-panel .sp-row.on h3 { color: var(--text-main); }
+        .sweep-panel .sp-row p { font-size: 11px; color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .sweep-panel .sp-row .sp-size { font-variant-numeric: tabular-nums; color: var(--text-muted); font-size: 12px; text-align: right; }
+        .sweep-panel .sp-row.on .sp-size { color: var(--text-main); }
+
+        /* Confirm modal (reuses styles; add sweep variant) */
+        .sp-modal-bg { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: grid; place-items: center; z-index: 200; }
+        .sp-modal { width: 400px; max-width: 92vw; background: var(--bg-toolbar); border: 1px solid var(--border-color); border-radius: 14px; padding: 22px; box-shadow: 0 24px 60px rgba(0,0,0,0.6); }
+        .sp-modal h2 { font-size: 15px; font-weight: 700; margin-bottom: 8px; color: var(--text-main); }
+        .sp-modal p { color: var(--text-muted); font-size: 13px; line-height: 1.55; margin-bottom: 18px; }
+        .sp-modal-actions { display: flex; gap: 8px; justify-content: flex-end; }
+        .sp-modal-actions button { padding: 9px 16px; border-radius: 8px; font-family: inherit; font-weight: 700; font-size: 12.5px; cursor: pointer; border: 1px solid var(--border-color); background: transparent; color: var(--text-main); transition: border-color 0.15s; }
+        .sp-modal-actions button:hover { border-color: var(--text-muted); }
+        .sp-modal-actions .danger { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+        .sp-modal-actions .danger:hover { filter: brightness(1.1); }
+
+        /* Fix width when in vertical-tabs mode */
+        :root.vertical-tabs .sweep-panel { width: 380px; }
         /* ==================== Find bar ==================== */
         .find-bar {
             position: absolute; top: 8px; right: 16px; z-index: 10; display: flex; gap: 6px; align-items: center;
@@ -1652,21 +1910,12 @@
             display: none;
         }
 
-        :root.vertical-tabs:not(.rail-expanded) .rail-tab {
-            width: 36px;
-            height: 36px;
-        }
         :root.vertical-tabs:not(.rail-expanded) .rail-tab .rail-tab-title,
         :root.vertical-tabs:not(.rail-expanded) .rail-tab .rail-tab-close {
             display: none;
         }
         :root.vertical-tabs.rail-expanded .rail-tab {
-            width: auto;
-            height: 34px;
-            padding: 0 8px;
             justify-content: flex-start;
-            gap: 8px;
-            align-self: stretch;
         }
         .rail-tab-title {
             flex: 1;
@@ -1724,6 +1973,492 @@
         }
         .rail-tab.drop-before::before { top: -1px; }
         .rail-tab.drop-after::after { bottom: -1px; }
+                /* ==================== Import wizard ==================== */
+        .import-overlay {
+            position: fixed;
+            inset: 0;
+            z-index: 99999;
+            background:
+                radial-gradient(ellipse at top, color-mix(in srgb, var(--accent) 10%, var(--bg-top)), var(--bg-top) 55%),
+                var(--bg-top);
+            color: var(--text-main);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 24px;
+            animation: importFade 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+            -webkit-app-region: no-drag;
+            overflow-y: auto;
+        }
+        @keyframes importFade { from { opacity: 0; } to { opacity: 1; } }
+        .import-overlay .iw-card {
+            width: min(1080px, 96vw);
+            max-height: 94vh;
+            display: flex;
+            flex-direction: column;
+            background: color-mix(in srgb, var(--bg-toolbar) 96%, transparent);
+            border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border-color));
+            border-radius: 20px;
+            box-shadow:
+                0 40px 100px rgba(0, 0, 0, 0.7),
+                0 0 0 1px color-mix(in srgb, var(--accent) 12%, transparent),
+                0 0 80px -30px color-mix(in srgb, var(--accent) 50%, transparent);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            overflow: hidden;
+            animation: importCard 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+        }
+        @keyframes importCard {
+            from { opacity: 0; transform: translateY(14px) scale(0.98); }
+            to   { opacity: 1; transform: none; }
+        }
+        .iw-head {
+            padding: 30px 34px 22px;
+            border-bottom: 1px solid var(--border-color);
+            position: relative;
+            flex: none;
+        }
+        .iw-head::after {
+            content: "";
+            position: absolute;
+            bottom: -1px; left: 34px; right: 34px; height: 1px;
+            background: linear-gradient(90deg, transparent, var(--accent), transparent);
+            opacity: 0.65;
+        }
+        .iw-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 4px 12px;
+            border-radius: 999px;
+            background: color-mix(in srgb, var(--accent) 15%, transparent);
+            border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+            color: color-mix(in srgb, var(--accent) 70%, var(--text-main));
+            font-size: 11px;
+            font-weight: 800;
+            letter-spacing: 0.12em;
+            text-transform: uppercase;
+            margin-bottom: 14px;
+        }
+        .iw-badge .dot {
+            width: 6px; height: 6px; border-radius: 50%;
+            background: var(--accent);
+            box-shadow: 0 0 10px var(--accent);
+            animation: iwPulse 2s ease-in-out infinite;
+        }
+        @keyframes iwPulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.85); }
+        }
+        .iw-head h1 {
+            font-size: 27px;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            background: linear-gradient(120deg, var(--text-main), color-mix(in srgb, var(--accent) 65%, var(--text-main)));
+            -webkit-background-clip: text;
+            background-clip: text;
+            color: transparent;
+            margin-bottom: 8px;
+        }
+        .iw-head p {
+            font-size: 13.5px;
+            color: var(--text-muted);
+            line-height: 1.6;
+            max-width: 660px;
+        }
+        .iw-body {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            min-height: 0;
+            flex: 1;
+        }
+        @media (max-width: 820px) {
+            .iw-body { grid-template-columns: 1fr; }
+        }
+        .iw-col {
+            padding: 24px 30px;
+            overflow-y: auto;
+            scrollbar-width: thin;
+            min-height: 0;
+        }
+        .iw-col + .iw-col {
+            border-left: 1px solid var(--border-color);
+        }
+        .iw-col h2 {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 0.14em;
+            color: var(--text-muted);
+            font-weight: 800;
+            margin-bottom: 14px;
+        }
+
+        /* Browser rows */
+        .iw-browsers {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        .iw-browser {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 12px 14px;
+            background: transparent;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            cursor: pointer;
+            color: var(--text-main);
+            font-family: inherit;
+            text-align: left;
+            transition: all 0.15s ease;
+            position: relative;
+        }
+        .iw-browser:hover:not(:disabled) {
+            background: var(--bg-tab-active);
+            border-color: color-mix(in srgb, var(--accent) 45%, var(--border-color));
+            transform: translateX(2px);
+        }
+        .iw-browser:disabled { opacity: 0.35; cursor: not-allowed; }
+        .iw-browser.selected {
+            background: color-mix(in srgb, var(--accent) 10%, var(--bg-tab-active));
+            border-color: var(--accent);
+            box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 45%, transparent),
+                        0 8px 24px -12px color-mix(in srgb, var(--accent) 60%, transparent);
+        }
+        .iw-browser-icon {
+            width: 30px; height: 30px; flex: none;
+            display: grid; place-items: center;
+            border-radius: 8px;
+            font-size: 16px;
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+        }
+        .iw-browser-info { flex: 1; min-width: 0; }
+        .iw-browser-info h3 {
+            font-size: 13.5px;
+            font-weight: 700;
+            margin-bottom: 2px;
+        }
+        .iw-browser-info small {
+            font-size: 11px;
+            color: var(--text-muted);
+            display: block;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .iw-browser-check {
+            width: 20px; height: 20px; border-radius: 50%;
+            border: 2px solid var(--border-color);
+            flex: none;
+            display: grid; place-items: center;
+            transition: all 0.2s ease;
+        }
+        .iw-browser.selected .iw-browser-check {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+        .iw-browser-check svg {
+            width: 12px; height: 12px;
+            stroke: var(--on-accent);
+            stroke-width: 3;
+            fill: none;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            stroke-dasharray: 24;
+            stroke-dashoffset: 24;
+            transition: stroke-dashoffset 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .iw-browser.selected .iw-browser-check svg { stroke-dashoffset: 0; }
+
+        /* Profiles */
+        .iw-profiles {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-top: 6px;
+        }
+        .iw-profile {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 12px;
+            border-radius: 999px;
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            cursor: pointer;
+            color: var(--text-main);
+            font-family: inherit;
+            font-size: 12px;
+            transition: all 0.15s ease;
+        }
+        .iw-profile:hover {
+            border-color: color-mix(in srgb, var(--accent) 55%, var(--border-color));
+        }
+        .iw-profile.selected {
+            background: color-mix(in srgb, var(--accent) 15%, transparent);
+            border-color: var(--accent);
+            color: color-mix(in srgb, var(--accent) 80%, var(--text-main));
+        }
+        .iw-profile-avatar {
+            width: 18px; height: 18px; border-radius: 50%;
+            display: grid; place-items: center;
+            font-size: 10px; font-weight: 800;
+            color: #fff;
+        }
+
+        /* Checklist */
+        .iw-checks { display: flex; flex-direction: column; gap: 6px; }
+        .iw-check {
+            display: flex; align-items: center; gap: 14px;
+            padding: 12px 14px;
+            background: transparent;
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            cursor: pointer;
+            color: var(--text-main);
+            font-family: inherit;
+            text-align: left;
+            transition: all 0.15s ease;
+            position: relative;
+        }
+        .iw-check:hover:not(:disabled) {
+            background: var(--bg-tab-active);
+            border-color: color-mix(in srgb, var(--accent) 35%, var(--border-color));
+        }
+        .iw-check.on {
+            background: color-mix(in srgb, var(--accent) 6%, var(--bg-tab-active));
+            border-color: color-mix(in srgb, var(--accent) 50%, var(--border-color));
+        }
+        .iw-check:disabled { opacity: 0.35; cursor: not-allowed; }
+        .iw-check-box {
+            width: 22px; height: 22px; border-radius: 7px;
+            border: 2px solid var(--border-color);
+            flex: none;
+            display: grid; place-items: center;
+            transition: all 0.2s ease;
+        }
+        .iw-check.on .iw-check-box {
+            background: var(--accent);
+            border-color: var(--accent);
+        }
+        .iw-check-box svg {
+            width: 12px; height: 12px;
+            stroke: var(--on-accent);
+            stroke-width: 3;
+            fill: none;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            stroke-dasharray: 24;
+            stroke-dashoffset: 24;
+            transition: stroke-dashoffset 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .iw-check.on .iw-check-box svg { stroke-dashoffset: 0; }
+        .iw-check-info { flex: 1; min-width: 0; }
+        .iw-check-info h3 {
+            font-size: 13.5px;
+            font-weight: 700;
+            margin-bottom: 2px;
+        }
+        .iw-check-info p {
+            font-size: 11.5px;
+            color: var(--text-muted);
+            line-height: 1.4;
+        }
+        .iw-check-count {
+            font-size: 12px;
+            font-weight: 800;
+            color: color-mix(in srgb, var(--accent) 70%, var(--text-main));
+            font-variant-numeric: tabular-nums;
+            flex: none;
+            min-width: 70px;
+            text-align: right;
+            font-family: ui-monospace, Menlo, Consolas, monospace;
+        }
+        .iw-check-count.empty {
+            color: var(--text-muted);
+            font-weight: 400;
+        }
+
+        /* Warning banner */
+        .iw-warn {
+            display: flex; align-items: center; gap: 12px;
+            padding: 12px 16px;
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid rgba(245, 158, 11, 0.4);
+            border-radius: 10px;
+            font-size: 12.5px;
+            color: #fbbf24;
+            margin-bottom: 12px;
+            line-height: 1.5;
+        }
+        .iw-warn button {
+            margin-left: auto;
+            background: rgba(245, 158, 11, 0.2);
+            border: 1px solid rgba(245, 158, 11, 0.55);
+            color: #fbbf24;
+            border-radius: 6px;
+            padding: 4px 12px;
+            font-family: inherit;
+            font-size: 11.5px;
+            font-weight: 700;
+            cursor: pointer;
+        }
+        .iw-warn button:hover { background: rgba(245, 158, 11, 0.32); }
+
+        /* Footer */
+        .iw-foot {
+            padding: 20px 30px;
+            border-top: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            background: color-mix(in srgb, var(--bg-top) 35%, transparent);
+            flex: none;
+        }
+        .iw-foot-msg {
+            flex: 1;
+            font-size: 12.5px;
+            color: var(--text-muted);
+            line-height: 1.5;
+        }
+        .iw-foot-msg strong { color: var(--text-main); }
+        .iw-btn {
+            padding: 11px 22px;
+            border-radius: 10px;
+            font-family: inherit;
+            font-size: 13.5px;
+            font-weight: 700;
+            cursor: pointer;
+            border: 1px solid var(--border-color);
+            background: transparent;
+            color: var(--text-main);
+            transition: all 0.15s ease;
+            letter-spacing: 0.02em;
+        }
+        .iw-btn:hover:not(:disabled) { border-color: var(--text-muted); }
+        .iw-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+        .iw-btn.primary {
+            background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 45%, #7000ff));
+            border: none;
+            color: var(--on-accent);
+            box-shadow: 0 8px 24px -8px color-mix(in srgb, var(--accent) 70%, transparent);
+        }
+        .iw-btn.primary:hover:not(:disabled) {
+            filter: brightness(1.1);
+            transform: translateY(-1px);
+            box-shadow: 0 12px 32px -8px color-mix(in srgb, var(--accent) 80%, transparent);
+        }
+        .iw-btn.ghost { opacity: 0.75; }
+        .iw-btn.ghost:hover { opacity: 1; }
+
+        /* Progress & result */
+        .iw-stage {
+            padding: 60px 40px;
+            text-align: center;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+        .iw-stage-icon {
+            width: 72px; height: 72px;
+            margin-bottom: 22px;
+            border-radius: 50%;
+            display: grid; place-items: center;
+            font-size: 32px;
+            background: radial-gradient(circle at 30% 30%, color-mix(in srgb, var(--accent) 65%, #7000ff), var(--accent));
+            color: var(--on-accent);
+            box-shadow: 0 0 45px color-mix(in srgb, var(--accent) 55%, transparent);
+            animation: iwSpin 1.6s linear infinite;
+        }
+        @keyframes iwSpin {
+            from { transform: rotate(0); }
+            to   { transform: rotate(360deg); }
+        }
+        .iw-stage-icon.done {
+            animation: iwPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+            background: radial-gradient(circle, #4ade80, #16a34a);
+            color: #052e16;
+            box-shadow: 0 0 45px rgba(74, 222, 128, 0.6);
+        }
+        @keyframes iwPop {
+            from { transform: scale(0.6); opacity: 0; }
+            to   { transform: scale(1); opacity: 1; }
+        }
+        .iw-stage h2 {
+            font-size: 24px;
+            font-weight: 800;
+            letter-spacing: -0.02em;
+            margin-bottom: 10px;
+        }
+        .iw-stage p {
+            font-size: 14px;
+            color: var(--text-muted);
+            line-height: 1.6;
+            max-width: 520px;
+            margin-bottom: 26px;
+        }
+        .iw-bar {
+            width: min(420px, 80%);
+            height: 6px;
+            border-radius: 3px;
+            background: var(--bg-input);
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+            margin-bottom: 14px;
+        }
+        .iw-bar > div {
+            height: 100%;
+            width: 0;
+            background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 40%, #7000ff));
+            box-shadow: 0 0 14px var(--accent);
+            transition: width 0.35s ease;
+        }
+        .iw-stage small {
+            font-size: 12.5px;
+            color: var(--text-muted);
+            min-height: 18px;
+        }
+        .iw-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 10px;
+            max-width: 620px;
+            width: 100%;
+            margin-bottom: 30px;
+        }
+        .iw-stat {
+            padding: 16px 12px;
+            background: var(--bg-input);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+        }
+        .iw-stat b {
+            display: block;
+            font-size: 24px;
+            font-weight: 800;
+            color: color-mix(in srgb, var(--accent) 75%, var(--text-main));
+            margin-bottom: 4px;
+            font-variant-numeric: tabular-nums;
+        }
+        .iw-stat span {
+            font-size: 10.5px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            font-weight: 700;
+        }
+        .iw-empty {
+            padding: 44px 20px;
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        .iw-empty .big { font-size: 42px; opacity: 0.4; margin-bottom: 14px; }
                 /* =====================================================================
            Contrast safety: keep accent-based text and thin strokes readable
            even when the accent is very dark (near-black).
@@ -1801,6 +2536,59 @@
 </head>
 <body>
 
+    <div class="import-overlay" id="import-overlay" hidden>
+
+        <div class="iw-card" id="iw-card">
+            <div id="iw-setup" style="display:flex;flex-direction:column;min-height:0;flex:1;">
+                <div class="iw-head">
+                    <span class="iw-badge"><span class="dot"></span> First-time setup</span>
+                    <h1>Bring your browsing with you</h1>
+                    <p>Neira can read the bookmarks, history, and sessions from another browser on this computer. Nothing leaves your device — everything stays local.</p>
+                </div>
+
+                <div class="iw-body">
+                    <div class="iw-col">
+                        <h2>1. Choose a browser</h2>
+                        <div class="iw-browsers" id="iw-browsers"></div>
+
+                        <div id="iw-profile-section" hidden>
+                            <h2 style="margin-top:24px;">2. Which profile?</h2>
+                            <div class="iw-profiles" id="iw-profiles"></div>
+                        </div>
+                    </div>
+
+                    <div class="iw-col">
+                        <h2>3. What to import</h2>
+                        <div id="iw-warn-slot"></div>
+                        <div class="iw-checks" id="iw-checks"></div>
+                    </div>
+                </div>
+
+                <div class="iw-foot">
+                    <div class="iw-foot-msg" id="iw-foot-msg">Pick a browser to see what can be imported.</div>
+                    <button class="iw-btn ghost" id="iw-skip" type="button">Skip for now</button>
+                    <button class="iw-btn primary" id="iw-import" type="button" disabled>Import selected</button>
+                </div>
+            </div>
+
+            <div id="iw-progress" class="iw-stage" hidden>
+                <div class="iw-stage-icon" id="iw-progress-icon">⟳</div>
+                <h2 id="iw-progress-title">Importing…</h2>
+                <p id="iw-progress-sub">Reading data from the other browser</p>
+                <div class="iw-bar"><div id="iw-progress-fill"></div></div>
+                <small id="iw-progress-detail"></small>
+            </div>
+
+            <div id="iw-result" class="iw-stage" hidden>
+                <div class="iw-stage-icon done" id="iw-result-icon">✓</div>
+                <h2>All set</h2>
+                <p id="iw-result-msg">Here's what we brought over.</p>
+                <div class="iw-stats" id="iw-result-stats"></div>
+                <button class="iw-btn primary" id="iw-done" type="button">Start browsing</button>
+            </div>
+        </div>
+    </div>
+
     <aside class="rail" id="rail" aria-label="Tabs rail">
         <button class="rail-btn" id="rail-collapse" title="Expand / collapse">
             <svg viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
@@ -1810,14 +2598,15 @@
             <svg viewBox="0 0 24 24"><path d="M4 6h16v3H4zm0 5h16v3H4zm0 5h16v3H4z"/></svg>
             <span class="rail-label">Tabs</span>
         </button>
-        <button class="rail-btn" id="rail-history" title="History">
-            <svg viewBox="0 0 24 24"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
-            <span class="rail-label">History</span>
+        <button class="rail-btn" id="rail-sweep" title="Neira Sweep">
+            <svg viewBox="0 0 24 24"><path d="M15 4l-1.5 3L11 8.5l2.5 1L15 12l1.5-2.5L19 8.5l-2.5-1L15 4zM7 12l-1 2-2 1 2 1 1 2 1-2 2-1-2-1-1-2zm10 4l-.7 1.5L15 18.2l1.3.7L17 20.5l.7-1.6 1.5-.7-1.5-.7L17 16z"/><path d="M4.5 20.5c2.5 1 5.5 1 8-.5s3.5-4.5 3-7" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>
+            <span class="rail-label">Sweep</span>
         </button>
         <button class="rail-btn" id="rail-downloads" title="Downloads">
             <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
             <span class="rail-label">Downloads</span>
         </button>
+        <div class="rail-divider"></div>
         <div class="rail-tabs" id="rail-tabs-list"></div>
         <div class="rail-spacer"></div>
         <button class="rail-btn" id="rail-newtab" title="New tab">
@@ -1870,6 +2659,9 @@
         <button class="nav-btn" id="history-toggle" title="History">
             <svg viewBox="0 0 24 24"><path d="M13 3c-4.97 0-9 4.03-9 9H1l3.89 3.89.07.14L9 12H6c0-3.87 3.13-7 7-7s7 3.13 7 7-3.13 7-7 7c-1.93 0-3.68-.79-4.94-2.06l-1.42 1.42C8.27 19.99 10.51 21 13 21c4.97 0 9-4.03 9-9s-4.03-9-9-9zm-1 5v5l4.28 2.54.72-1.21-3.5-2.08V8H12z"/></svg>
         </button>
+        <button class="nav-btn" id="sweep-btn" title="Neira Sweep — clean up cache, cookies, history">
+            <svg viewBox="0 0 24 24"><path d="M15 4l-1.5 3L11 8.5l2.5 1L15 12l1.5-2.5L19 8.5l-2.5-1L15 4zM7 12l-1 2-2 1 2 1 1 2 1-2 2-1-2-1-1-2zm10 4l-.7 1.5L15 18.2l1.3.7L17 20.5l.7-1.6 1.5-.7-1.5-.7L17 16z"/><path d="M4.5 20.5c2.5 1 5.5 1 8-.5s3.5-4.5 3-7" stroke="currentColor" stroke-width="1.4" fill="none" stroke-linecap="round"/></svg>
+        </button>
         <button class="nav-btn" id="downloads-btn" title="Downloads">
             <svg viewBox="0 0 24 24"><path d="M19 9h-4V3H9v6H5l7 7 7-7zM5 18v2h14v-2H5z"/></svg>
         </button>
@@ -1884,6 +2676,54 @@
     <div class="bookmarks-bar" id="bookmarks-bar"></div>
 
     <div class="main-row">
+        <aside class="sweep-panel" id="sweep-panel" hidden aria-label="Neira Sweep">
+            <div class="sp-head">
+                <span class="sp-title"><span class="sp-logo">🧹</span> NEIRA SWEEP</span>
+                <div class="as-head-actions">
+                    <button class="nav-btn" id="sweep-rescan" title="Rescan">⟳</button>
+                    <button class="nav-btn" id="sweep-close" title="Close">✕</button>
+                </div>
+            </div>
+            <div class="sp-body">
+                <p class="sp-intro">Clear cache, cookies and clutter from this browser. Files you've already downloaded are kept.</p>
+
+                <div class="sp-card">
+                    <div class="sp-card-h"><span>Selected to free</span><span id="sweep-summary"></span></div>
+                    <div class="sp-card-b">
+                        <div class="sp-big" aria-live="polite"><span class="sp-num" id="sweep-num">0</span><span class="sp-unit" id="sweep-unit">MB</span></div>
+                        <div class="sp-sub" id="sweep-sub">scanning…</div>
+                        <div class="sp-gauge" id="sweep-gauge" role="img" aria-label="Share of found data selected"></div>
+                        <div class="sp-stats">
+                            <div><b id="sweep-stat-dl">0 MB</b><span>Downloads</span></div>
+                            <div><b id="sweep-stat-ck">0</b><span>Cookies</span></div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sp-card">
+                    <div class="sp-card-h"><span>Intensity</span><span>1 / 2 / 3</span></div>
+                    <div class="sp-profiles" id="sweep-levels" role="radiogroup" aria-label="Sweep intensity">
+                        <button type="button" data-level="light" role="radio" aria-checked="false"><strong>Light</strong><small>Cache only</small></button>
+                        <button type="button" data-level="standard" role="radio" aria-checked="true" class="active"><strong>Standard</strong><small>Everyday</small></button>
+                        <button type="button" data-level="deep" role="radio" aria-checked="false"><strong>Deep</strong><small>Everything</small></button>
+                    </div>
+                </div>
+
+                <button class="sp-fab" id="sweep-fab" type="button"><span id="sweep-fab-label">Start sweep</span><kbd>s</kbd></button>
+
+                <div class="sp-card">
+                    <div class="sp-card-h"><span>Targets</span><span id="sweep-foot"></span></div>
+                    <div class="sp-thead"><span></span><span>Target</span><span>Size</span></div>
+                    <div id="sweep-cats" role="group" aria-label="Items to sweep"></div>
+                </div>
+
+                <div class="sp-card">
+                    <div class="sp-card-h"><span>Output</span></div>
+                    <div class="sp-log" id="sweep-log" aria-live="polite"></div>
+                </div>
+            </div>
+        </aside>
+
         <div id="views-container">
             <div class="find-bar" id="find-bar" hidden>
                 <input type="text" id="find-input" placeholder="Find in page" spellcheck="false" autocomplete="off" />
@@ -1954,11 +2794,13 @@
 
     </div>
 
+    
     <div class="dropdown" id="dropdown" role="menu" hidden></div>
         <div class="tracker-pop" id="tracker-pop" role="dialog" aria-label="Tracker blocker" hidden></div>
     <div class="profile-pop" id="profile-pop" role="dialog" aria-label="Profiles" hidden></div>
 
       <div class="ctx-menu" id="tab-ctx" role="menu" hidden></div>
+          <div class="ctx-menu" id="rail-ctx" role="menu" hidden></div>
     <div class="group-pop" id="group-pop" role="dialog" aria-label="Tab groups" hidden></div>
     <div class="ctx-menu" id="page-ctx" role="menu" hidden></div>
     
@@ -1989,7 +2831,16 @@
         </div>
         <div class="dl-shelf-body" id="dl-shelf-body"></div>
     </div>
-    
+        <div class="sp-modal-bg" id="sweep-confirm" hidden>
+        <div class="sp-modal">
+            <h2>Sweep now?</h2>
+            <p id="sweep-confirm-body">This will clear the selected items. Bookmarks, saved passwords, and downloaded files are kept.</p>
+            <div class="sp-modal-actions">
+                <button type="button" id="sweep-confirm-cancel">Cancel</button>
+                <button type="button" class="danger" id="sweep-confirm-ok">Sweep</button>
+            </div>
+        </div>
+    </div>
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
     <div class="win-controls" id="win-controls">
@@ -2005,9 +2856,10 @@
         </button>
     </div>
 
-    <script src="ai.js"></script>
+        <script src="ai.js"></script>
     <script src="drag.js"></script>
     <script src="app.js"></script>
+    <script src="import.js"></script>
     <script src="assistant-fx.js"></script>
 
 </body>

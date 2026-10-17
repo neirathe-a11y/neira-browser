@@ -1,15 +1,46 @@
 'use strict';
 (() => {
+        
     const api = window.neira;
     const $ = id => document.getElementById(id);
     const root = document.documentElement;
     const content = $('content');
+
+    // ---------- Import wizard launcher ----------
+    (() => {
+        const openBtn = $('import-open');
+        const status = $('import-status');
+        const whyBtn = $('import-close-others');
+        if (!openBtn) return;
+
+        openBtn.addEventListener('click', () => {
+            if (api && api.importer && api.importer.openWizard) {
+                api.importer.openWizard();
+                if (status) {
+                    status.textContent = 'Opening the import wizard…';
+                    setTimeout(() => { status.textContent = ''; }, 2000);
+                }
+            } else if (status) {
+                status.textContent = 'The import wizard is not available in this build yet.';
+                status.classList.add('warn');
+            }
+        });
+
+        if (whyBtn) {
+            whyBtn.addEventListener('click', () => {
+                if (!status) return;
+                status.textContent = 'Chrome, Edge, and Firefox lock their cookies while running. Close them first. Bookmarks and history still work either way.';
+                setTimeout(() => { status.textContent = ''; }, 7000);
+            });
+        }
+    })();
 
     const SECTIONS = {
         history: 'History',
         bookmarks: 'Bookmarks',
         downloads: 'Downloads',
         extensions: 'Extensions',
+                sync: 'Sync',
         appearance: 'Appearance & Theme',
         ai: 'Local AI',
         search: 'Search & Startup',
@@ -1321,11 +1352,46 @@
     // -----------------------------------------------------------------------
     // Boot
     // -----------------------------------------------------------------------
+        // Default browser card (Settings > Search & Startup)
+    function setupDefaultBrowser() {
+        const api = window.neira;
+        const button = document.getElementById('db-set');
+        const status = document.getElementById('db-status');
+        const hint = document.getElementById('db-hint');
+        if (!api || !api.defaultBrowser || !button || !status) return;
+
+        async function refresh() {
+            let s;
+            try { s = await api.defaultBrowser.status(); } catch (_) { return; }
+            const lines = [(s.web ? '✓ ' : '✗ ') + 'Web links (http and https)'];
+            if (s.pdf !== null) lines.push((s.pdf ? '✓ ' : '✗ ') + 'PDF files');
+            status.textContent = lines.join('\n');
+            const windows = s.platform === 'win32';
+            button.textContent = windows ? 'Open Windows default apps' : (s.web ? 'Neira is your default browser' : 'Make Neira default');
+            button.disabled = !windows && s.web;
+            hint.hidden = !windows;
+            hint.textContent = s.registered
+                ? 'Windows asks you to choose: in the page that opens, pick Neira and set it for the types you want (HTTP, HTTPS, .pdf, .html).'
+                : 'Neira is not registered with Windows yet. Install it with the setup file (or update), then come back here.';
+        }
+
+        button.addEventListener('click', async () => {
+            button.disabled = true;
+            let r = null;
+            try { r = await api.defaultBrowser.set(); } catch (_) { /* shown below */ }
+            if (r && !r.ok && r.reason) { hint.hidden = false; hint.textContent = r.reason; }
+            setTimeout(() => { button.disabled = false; refresh(); }, 800);
+        });
+        window.addEventListener('focus', refresh); // coming back from the Windows settings page
+        refresh();
+    }
+
     async function init() {
         const safe = (name, fn) => {
             try { fn(); } catch (err) { console.warn(`[pages] ${name} failed:`, err); }
         };
         safe('bindSettings', bindSettings);
+                safe('setupDefaultBrowser', setupDefaultBrowser);
         safe('bindExtensions', bindExtensions);
         safe('bindShortcuts', bindShortcuts);
         safe('bindPasswords', bindPasswords);

@@ -330,6 +330,8 @@
         <a class="nav-item" data-section="bookmarks" href="#bookmarks">Bookmarks <span class="nav-badge" id="badge-bookmarks" hidden></span></a>
         <a class="nav-item" data-section="downloads" href="#downloads">Downloads <span class="nav-badge" id="badge-downloads" hidden></span></a>
         <a class="nav-item" data-section="extensions" href="#extensions">Extensions</a>
+                <a class="nav-item" data-section="sync" href="#sync">Sync</a>
+        
 
         <div class="nav-group">Settings</div>
         <a class="nav-item" data-section="appearance" href="#appearance">Appearance &amp; Theme</a>
@@ -378,6 +380,37 @@
                 <button class="btn" id="downloads-clear">Clear finished</button>
             </div>
             <div class="list" id="downloads-list"><div class="skeleton"><i></i><i></i><i></i></div></div>
+        </section>
+       
+        <!-- SYNC / IMPORT -->
+        <section class="page-section" id="sync">
+            <h1 class="section-header">Sync</h1>
+            <p class="section-sub">Bring your bookmarks, history, and sessions over from another browser. Everything is copied locally — nothing leaves your device.</p>
+
+            <div class="setting-card stack">
+                <div class="setting-info">
+                    <h3>Import from another browser</h3>
+                    <p>
+                        Copies bookmarks, history, and cookie sessions from Chrome, Edge, Brave, Vivaldi, Opera, or Firefox.
+                        <br>
+                        <strong>Bookmarks</strong> — every saved link and folder.<br>
+                        <strong>History</strong> — the last 5,000 pages you visited.<br>
+                        <strong>Sessions</strong> — cookies that keep you signed in to Gmail, YouTube, and everything else.<br>
+                        <strong>Settings</strong> — your home page and preferences.
+                    </p>
+                </div>
+                <div style="display:flex; gap:10px; width:100%">
+                    <button class="btn btn-primary" id="import-open">Open import wizard</button>
+                </div>
+                <div class="status-line" id="import-status" role="status"></div>
+            </div>
+
+            <div class="setting-card stack">
+                <div class="setting-info">
+                    <h3>Privacy</h3>
+                    <p>Everything happens on this computer. Neira reads the other browser's files directly. Nothing is uploaded. Existing data is kept — the import adds to what you already have.</p>
+                </div>
+            </div>
         </section>
 
         <!-- EXTENSIONS -->
@@ -521,6 +554,16 @@
         <section class="page-section" id="search">
             <h1 class="section-header">Search &amp; Startup</h1>
             <p class="section-sub">What the address bar searches with, and how Neira opens.</p>
+
+            <div class="setting-card">
+                <div class="setting-info">
+                    <h3>Default browser</h3>
+                    <p>Open links, PDFs, web pages and images from other apps in Neira.</p>
+                    <p id="db-status" style="margin-top:8px;white-space:pre-line"></p>
+                    <p id="db-hint" style="margin-top:6px" hidden></p>
+                </div>
+                <button class="btn btn-primary" id="db-set" type="button">Make Neira default</button>
+            </div>
 
             <div class="setting-card">
                 <div class="setting-info">
@@ -908,6 +951,8 @@
         </div>
     </div>
 
+    </script>
     <script src="pages.js"></script>
+  
 </body>
 </html>

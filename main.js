@@ -10,12 +10,15 @@ initialize('A-EU-3606599135');
 
 const path = require('path');
 const fs = require('fs');
+const defaultBrowser = require('./default-browser');
 const crypto = require('crypto');
 const { fileURLToPath, pathToFileURL } = require('url');
 const Shortcuts = require('./shortcuts');
 const { createStore } = require('./store');
 const { assetResponse, VIDEO_EXT, NAME_RE } = require('./assets');
 const { shouldBlock: isTracker, isAllowed: isTrackerAllowed, TRACKERS } = require('./blocklist');
+let Database = null;
+try { Database = require('better-sqlite3'); } catch (_) { Database = null; }
 
 protocol.registerSchemesAsPrivileged([
     { scheme: 'neira-asset', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
@@ -56,7 +59,8 @@ const STORE_DEFAULTS = {
         offerPasskey: true,
         autoSignin: true,
         trackerBlocking: true,
-        trackerAllowlist: []
+        trackerAllowlist: [],
+        hasSeenImport: false
     },
     shortcuts: {},
     bookmarks: [],
@@ -707,6 +711,7 @@ app.on('web-contents-created', (_e, contents) => {
         webPreferences.contextIsolation = true;
         webPreferences.sandbox = true;
         webPreferences.webSecurity = true;
+                webPreferences.plugins = true;
         webPreferences.allowRunningInsecureContent = false;
         delete params.allowpopups;
 
@@ -924,7 +929,7 @@ const PIN_FAILS = { count: 0, until: 0 };
 const RECOVERY_FAILS = { count: 0, until: 0 };
 
 function registerIpc() {
-    handle('tracker:status', (event, host) => {
+      handle('tracker:status', (event, host) => {
         const settings = store.data.settings;
         const enabled = settings.trackerBlocking !== false;
         const allowlist = settings.trackerAllowlist || [];
@@ -1457,7 +1462,12 @@ function registerIpc() {
         if (typeof text !== 'string' || !text.trim() || text.length > 2000) return;
         sendTo(infoFromContents(event.sender), 'open-input', text, { replaceWcId: event.sender.id, newTab: !!newTab });
     });
-
+        listen('importer:open-wizard', event => {
+        const info = infoFromContents(event.sender);
+        if (info && !info.win.isDestroyed()) {
+            info.win.webContents.send('importer:show-wizard');
+        }
+    });
     handle('permissions:list', () => Object.entries(store.data.permissions).map(([key, allow]) => {
         const i = key.lastIndexOf('|');
         return { origin: key.slice(0, i), permission: key.slice(i + 1), allow };
@@ -1796,42 +1806,703 @@ function registerIpc() {
         return { ok: true };
     });
 
-    handle('extensions:load', async event => {
-        const win = parentOf(event);
-        const { canceled, filePaths } = await (win
-            ? dialog.showOpenDialog(win, { properties: ['openDirectory'] })
-            : dialog.showOpenDialog({ properties: ['openDirectory'] }));
-        if (canceled || !filePaths[0]) return { ok: false, cancelled: true };
-        const dir = filePaths[0];
-        let manifest;
-        try {
-            manifest = JSON.parse(fs.readFileSync(path.join(dir, 'manifest.json'), 'utf8'));
-        } catch (_) {
-            return { ok: false, reason: 'That folder does not contain a valid manifest.json.' };
-        }
-        const main = manifest.main || manifest.content_script || manifest.script;
-        if (!main) return { ok: false, reason: 'The manifest.json is missing a "main" script.' };
-        let code;
-        try {
-            code = fs.readFileSync(path.join(dir, main), 'utf8');
-        } catch (_) {
-            return { ok: false, reason: `Could not read ${main}.` };
-        }
-        if (code.length > 512 * 1024) return { ok: false, reason: 'That extension is too large (limit 512 KB).' };
-        return {
-            ok: true,
-            extension: {
-                id: crypto.randomUUID(),
-                name: String(manifest.name || path.basename(dir)).slice(0, 60),
-                version: String(manifest.version || '1.0.0').slice(0, 20),
-                description: String(manifest.description || '').slice(0, 200),
-                icon: typeof manifest.icon === 'string' ? manifest.icon.slice(0, 4) : '🧩',
-                code,
-                enabled: true,
-                shortcuts: manifest.shortcuts && typeof manifest.shortcuts === 'object' ? manifest.shortcuts : {}
-            }
-        };
+       // ----- Import from another browser -----
+    handle('importer:detect', () => ({ browsers: detectBrowsers() }));
+
+    handle('importer:scan', (_e, browserId, profileId) => {
+        const b = BROWSER_DEFS.find(x => x.id === browserId);
+        if (!b) return { ok: false, reason: 'Unknown browser.' };
+        const profiles = detectProfilesFor(b);
+        const profile = profiles.find(p => p.id === profileId);
+        if (!profile) return { ok: false, reason: 'That profile no longer exists.' };
+        return scanProfile(b, profile);
     });
+
+    handle('importer:run', async (event, browserId, profileId, items) => {
+        const b = BROWSER_DEFS.find(x => x.id === browserId);
+        if (!b) return { ok: false, reason: 'Unknown browser.' };
+        const profiles = detectProfilesFor(b);
+        const profile = profiles.find(p => p.id === profileId);
+        if (!profile) return { ok: false, reason: 'That profile no longer exists.' };
+        return await runImport(b, profile, Array.isArray(items) ? items : []);
+    });
+
+        handle('importer:mark-seen', () => {
+        store.data.settings.hasSeenImport = true;
+        store.save();
+        broadcast('settings:changed', store.data.settings);
+        return { ok: true };
+    });
+
+    // ----- Neira Sweep -----
+    
+    handle('sweep:scan', async event => {
+        const info = infoFromContents(event.sender);
+        if (!info) return { categories: emptySweepCategories() };
+
+        const ses = activeSession();
+        const categories = emptySweepCategories();
+
+        // Cache + cookies
+        try {
+            const cacheSize = await ses.getCacheSize();
+            categories.cache.bytes = cacheSize || 0;
+        } catch (_) {}
+
+        try {
+            const cookies = await ses.cookies.get({});
+            categories.cookies.count = cookies.length;
+            // Rough estimate: 2 KB per cookie
+            categories.cookies.bytes = cookies.length * 2048;
+        } catch (_) {}
+
+        // Tabs
+        categories.tabs.count = Math.max(0, tabsCountForInfo(info) - 1);
+
+        // History
+        categories.history.count = store.data.history.length;
+
+        // Downloads list
+        categories.downloads.count = downloads.length;
+        // Sum sizes of finished downloads
+        let dlBytes = 0;
+        for (const d of downloads) dlBytes += (d.received || 0);
+        categories.downloads.bytes = dlBytes;
+
+        // Local AI models on disk
+        try {
+            const aiDir = path.join(app.getPath('userData'), 'ai-models');
+            if (fs.existsSync(aiDir)) {
+                const walk = (dir) => {
+                    let total = 0;
+                    for (const f of fs.readdirSync(dir)) {
+                        const p = path.join(dir, f);
+                        const st = fs.statSync(p);
+                        if (st.isDirectory()) total += walk(p);
+                        else total += st.size;
+                    }
+                    return total;
+                };
+                categories.ai.bytes = walk(aiDir);
+                categories.ai.count = 1;
+            }
+        } catch (_) {}
+
+        return { categories };
+    });
+
+    handle('sweep:run', async (event, cats, level) => {
+        const list = Array.isArray(cats) ? cats : [];
+        const info = infoFromContents(event.sender);
+        const ses = activeSession();
+        let freed = 0;
+        let cleared = 0;
+
+        for (const c of list) {
+            try {
+                if (c === 'cache') {
+                    const before = await ses.getCacheSize().catch(() => 0);
+                    await ses.clearCache();
+                    freed += before || 0;
+                    cleared++;
+                } else if (c === 'cookies') {
+                    const cookies = await ses.cookies.get({}).catch(() => []);
+                    for (const cookie of cookies) {
+                        const url = `http${cookie.secure ? 's' : ''}://${cookie.domain.replace(/^\./, '')}${cookie.path || '/'}`;
+                        await ses.cookies.remove(url, cookie.name).catch(() => {});
+                    }
+                    freed += cookies.length * 2048;
+                    cleared++;
+                } else if (c === 'tabs') {
+                    if (info) closeOtherTabsForInfo(info);
+                    cleared++;
+                } else if (c === 'history') {
+                    store.data.history = [];
+                    store.save();
+                    cleared++;
+                } else if (c === 'downloads') {
+                    for (let i = downloads.length - 1; i >= 0; i--) {
+                        if (downloads[i].state !== 'progressing' && downloads[i].state !== 'paused') {
+                            freed += downloads[i].received || 0;
+                            downloads.splice(i, 1);
+                        }
+                    }
+                    notifyDownloads(true);
+                    cleared++;
+                } else if (c === 'ai') {
+                    const aiDir = path.join(app.getPath('userData'), 'ai-models');
+                    if (fs.existsSync(aiDir)) {
+                        const walk = (dir) => {
+                            let total = 0;
+                            for (const f of fs.readdirSync(dir)) {
+                                const p = path.join(dir, f);
+                                const st = fs.statSync(p);
+                                if (st.isDirectory()) total += walk(p);
+                                else total += st.size;
+                            }
+                            return total;
+                        };
+                        freed += walk(aiDir);
+                        fs.rmSync(aiDir, { recursive: true, force: true });
+                    }
+                    cleared++;
+                }
+            } catch (_) {}
+        }
+
+        broadcast('history:changed', store.data.history);
+        broadcast('downloads:changed', downloads);
+        return { ok: true, freed, cleared, level: level || 'standard' };
+    });
+
+    // Helpers used by sweep handlers
+    function emptySweepCategories() {
+        return {
+            cache:     { bytes: 0, count: 0 },
+            cookies:   { bytes: 0, count: 0 },
+            tabs:      { bytes: 0, count: 0 },
+            history:   { bytes: 0, count: 0 },
+            downloads: { bytes: 0, count: 0 },
+            ai:        { bytes: 0, count: 0 }
+        };
+    }
+
+    function tabsCountForInfo(info) {
+        // Count of tabs in the window that owns this info object
+        let n = 0;
+        for (const w of windows) {
+            if (w === info) {
+                const list = wcTabCounts.get(info);
+                if (typeof list === 'number') n = list;
+            }
+        }
+        // Fallback: we don't track tab counts in main; assume 1
+        return n || 1;
+    }
+
+    const wcTabCounts = new WeakMap();
+
+        function closeOtherTabsForInfo(info) {
+        // Send a message to the renderer asking it to close all tabs except the active one.
+        if (info && !info.win.isDestroyed()) {
+            info.win.webContents.send('shortcut:action', 'close_other_tabs');
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Browser import (Chromium + Firefox)
+const BROWSER_DEFS = [
+    {
+        id: 'edge', name: 'Microsoft Edge', icon: '🌊',
+        root: () => path.join(process.env.LOCALAPPDATA || '', 'Microsoft', 'Edge', 'User Data')
+    },
+    {
+        id: 'chrome', name: 'Google Chrome', icon: '🔴',
+        root: () => path.join(process.env.LOCALAPPDATA || '', 'Google', 'Chrome', 'User Data')
+    },
+    {
+        id: 'brave', name: 'Brave', icon: '🦁',
+        root: () => path.join(process.env.LOCALAPPDATA || '', 'BraveSoftware', 'Brave-Browser', 'User Data')
+    },
+    {
+        id: 'vivaldi', name: 'Vivaldi', icon: '🅥',
+        root: () => path.join(process.env.LOCALAPPDATA || '', 'Vivaldi', 'User Data')
+    },
+    {
+        id: 'opera', name: 'Opera', icon: '🅾',
+        root: () => path.join(process.env.APPDATA || '', 'Opera Software', 'Opera Stable')
+    },
+    {
+        id: 'operagx', name: 'Opera GX', icon: '🎮',
+        root: () => path.join(process.env.APPDATA || '', 'Opera Software', 'Opera GX Stable')
+    },
+    {
+        id: 'firefox', name: 'Firefox', icon: '🦊',
+        root: () => path.join(process.env.APPDATA || '', 'Mozilla', 'Firefox'),
+        isFirefox: true
+    }
+];
+
+function readChromiumProfileName(profileDir) {
+    try {
+        const prefs = JSON.parse(fs.readFileSync(path.join(profileDir, 'Preferences'), 'utf8'));
+        const name = prefs && prefs.profile && (prefs.profile.name || '');
+        if (name) return name;
+    } catch (_) {}
+    return null;
+}
+
+function detectChromiumProfiles(rootDir) {
+    const out = [];
+    if (!rootDir || !fs.existsSync(rootDir)) return out;
+    try {
+        for (const entry of fs.readdirSync(rootDir)) {
+            const dir = path.join(rootDir, entry);
+            let stat;
+            try { stat = fs.statSync(dir); } catch (_) { continue; }
+            if (!stat.isDirectory()) continue;
+            if (!fs.existsSync(path.join(dir, 'Preferences'))) continue;
+            const displayName = readChromiumProfileName(dir) || (entry === 'Default' ? 'Default' : entry);
+            out.push({ id: entry, name: displayName, path: dir });
+        }
+    } catch (_) {}
+    return out;
+}
+
+function detectFirefoxProfiles(rootDir) {
+    const out = [];
+    if (!rootDir || !fs.existsSync(rootDir)) return out;
+    const profilesIni = path.join(rootDir, 'profiles.ini');
+    if (!fs.existsSync(profilesIni)) return out;
+    try {
+        const text = fs.readFileSync(profilesIni, 'utf8');
+        const sections = text.split(/\r?\n\[/).map(s => s.startsWith('[') ? s : '[' + s);
+        for (const section of sections) {
+            if (!/\[Profile\d+\]/.test(section)) continue;
+            const isRelative = /IsRelative=1/.test(section);
+            const pathMatch = /Path=(.+)/.exec(section);
+            const nameMatch = /Name=(.+)/.exec(section);
+            if (!pathMatch) continue;
+            const rawPath = pathMatch[1].trim();
+            const fullPath = isRelative ? path.join(rootDir, rawPath) : rawPath;
+            const displayName = nameMatch ? nameMatch[1].trim() : path.basename(rawPath);
+            if (!fs.existsSync(fullPath)) continue;
+            out.push({ id: rawPath, name: displayName, path: fullPath });
+        }
+    } catch (_) {}
+    return out;
+}
+
+function detectProfilesFor(b) {
+    const root = b.root();
+    if (!root || !fs.existsSync(root)) return [];
+    return b.isFirefox ? detectFirefoxProfiles(root) : detectChromiumProfiles(root);
+}
+
+function detectBrowsers() {
+    const out = [];
+    for (const b of BROWSER_DEFS) {
+        const root = b.root();
+        if (!root || !fs.existsSync(root)) continue;
+        const profiles = detectProfilesFor(b);
+        out.push({
+            id: b.id,
+            name: b.name,
+            icon: b.icon,
+            profiles
+        });
+    }
+    return out;
+}
+
+function scanProfile(b, profile) {
+    const counts = {
+        bookmarks: { count: 0, available: true },
+        history:   { count: 0, available: true },
+        cookies:   { count: 0, available: true },
+        autofill:  { count: 0, available: false },
+        search:    { count: 0, available: true },
+        settings:  { count: 0, available: true }
+    };
+    if (b.isFirefox) return scanFirefox(profile, counts);
+    return scanChromium(profile, counts);
+}
+
+function countChromiumBookmarks(roots) {
+    let n = 0;
+    const walk = (node) => {
+        if (!node) return;
+        if (node.type === 'url') n++;
+        if (node.children) for (const c of node.children) walk(c);
+    };
+    for (const key of Object.keys(roots)) walk(roots[key]);
+    return n;
+}
+
+function scanChromium(profile, counts) {
+    try {
+        const file = path.join(profile.path, 'Bookmarks');
+        if (fs.existsSync(file)) {
+            const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+            counts.bookmarks.count = countChromiumBookmarks(raw.roots || {});
+        }
+    } catch (_) {}
+
+    if (!Database) {
+        counts.history.available = false;
+        counts.cookies.available = false;
+        counts.search.available = false;
+        return { ok: true, counts, locked: false };
+    }
+
+    try {
+        const file = path.join(profile.path, 'History');
+        if (fs.existsSync(file)) {
+            const tmp = file + '.neira-copy-' + Date.now();
+            fs.copyFileSync(file, tmp);
+            const db = new Database(tmp, { readonly: true, fileMustExist: true });
+            const row = db.prepare('SELECT COUNT(*) AS n FROM urls').get();
+            counts.history.count = row ? row.n : 0;
+            db.close();
+            fs.unlinkSync(tmp);
+        }
+    } catch (_) { counts.history.available = false; }
+
+    try {
+        const file = path.join(profile.path, 'Cookies');
+        if (fs.existsSync(file)) {
+            const tmp = file + '.neira-copy-' + Date.now();
+            fs.copyFileSync(file, tmp);
+            const db = new Database(tmp, { readonly: true, fileMustExist: true });
+            const row = db.prepare('SELECT COUNT(*) AS n FROM cookies').get();
+            counts.cookies.count = row ? row.n : 0;
+            db.close();
+            fs.unlinkSync(tmp);
+        }
+    } catch (_) { counts.cookies.available = false; }
+
+    try {
+        const file = path.join(profile.path, 'Web Data');
+        if (fs.existsSync(file)) {
+            const tmp = file + '.neira-copy-' + Date.now();
+            fs.copyFileSync(file, tmp);
+            const db = new Database(tmp, { readonly: true, fileMustExist: true });
+            const row = db.prepare('SELECT COUNT(*) AS n FROM keywords').get();
+            counts.search.count = row ? row.n : 0;
+            db.close();
+            fs.unlinkSync(tmp);
+        }
+    } catch (_) { counts.search.available = false; }
+
+    counts.settings.count = fs.existsSync(path.join(profile.path, 'Preferences')) ? 1 : 0;
+    return { ok: true, counts, locked: false };
+}
+
+function scanFirefox(profile, counts) {
+    try {
+        const file = path.join(profile.path, 'places.sqlite');
+        if (fs.existsSync(file) && Database) {
+            const tmp = file + '.neira-copy-' + Date.now();
+            fs.copyFileSync(file, tmp);
+            const db = new Database(tmp, { readonly: true, fileMustExist: true });
+            const bm = db.prepare("SELECT COUNT(*) AS n FROM moz_bookmarks WHERE type=1").get();
+            counts.bookmarks.count = bm ? bm.n : 0;
+            const hi = db.prepare('SELECT COUNT(*) AS n FROM moz_places').get();
+            counts.history.count = hi ? hi.n : 0;
+            db.close();
+            try { fs.unlinkSync(tmp); } catch (_) {}
+        } else {
+            counts.bookmarks.available = false;
+            counts.history.available = false;
+        }
+    } catch (_) {}
+
+    try {
+        const file = path.join(profile.path, 'cookies.sqlite');
+        if (fs.existsSync(file) && Database) {
+            const tmp = file + '.neira-copy-' + Date.now();
+            fs.copyFileSync(file, tmp);
+            const db = new Database(tmp, { readonly: true, fileMustExist: true });
+            const row = db.prepare('SELECT COUNT(*) AS n FROM moz_cookies').get();
+            counts.cookies.count = row ? row.n : 0;
+            db.close();
+            try { fs.unlinkSync(tmp); } catch (_) {}
+        } else {
+            counts.cookies.available = false;
+        }
+    } catch (_) { counts.cookies.available = false; }
+
+    counts.autofill.available = false;
+    counts.search.available = false;
+    counts.settings.available = false;
+    return { ok: true, counts, locked: false };
+}
+
+async function runImport(b, profile, items) {
+    const result = {
+        ok: true,
+        browser: b.name,
+        bookmarks: 0, history: 0, cookies: 0, autofill: 0, search: 0, settings: 0
+    };
+    const wantBookmarks = items.includes('bookmarks');
+    const wantHistory = items.includes('history');
+    const wantCookies = items.includes('cookies');
+    const wantSearch = items.includes('search');
+    const wantSettings = items.includes('settings');
+
+    if (b.isFirefox) {
+        await importFromFirefox(profile, { wantBookmarks, wantHistory, wantCookies }, result);
+    } else {
+        await importFromChromium(b, profile, { wantBookmarks, wantHistory, wantCookies, wantSearch, wantSettings }, result);
+    }
+
+    store.save();
+    broadcast('bookmarks:changed', store.data.bookmarks);
+    broadcast('history:changed', store.data.history);
+    broadcast('settings:changed', store.data.settings);
+    return result;
+}
+
+async function importFromChromium(b, profile, flags, result) {
+    if (flags.wantBookmarks) {
+        try {
+            const file = path.join(profile.path, 'Bookmarks');
+            if (fs.existsSync(file)) {
+                const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+                const existing = new Set(store.data.bookmarks.map(b => b.url));
+                const walk = (node) => {
+                    if (!node) return;
+                    if (node.type === 'url' && node.url && /^https?:/i.test(node.url)) {
+                        if (!existing.has(node.url)) {
+                            store.data.bookmarks.push({ url: node.url, title: node.name || node.url });
+                            existing.add(node.url);
+                            result.bookmarks++;
+                        }
+                    }
+                    if (node.children) for (const c of node.children) walk(c);
+                };
+                const roots = raw.roots || {};
+                for (const key of Object.keys(roots)) walk(roots[key]);
+            }
+        } catch (_) {}
+    }
+
+    if (flags.wantHistory && Database) {
+        try {
+            const file = path.join(profile.path, 'History');
+            if (fs.existsSync(file)) {
+                const tmp = file + '.neira-copy-' + Date.now();
+                fs.copyFileSync(file, tmp);
+                const db = new Database(tmp, { readonly: true, fileMustExist: true });
+                const rows = db.prepare('SELECT url, title, last_visit_time FROM urls WHERE url LIKE "http%" ORDER BY last_visit_time DESC LIMIT 50000').all();
+                db.close();
+                try { fs.unlinkSync(tmp); } catch (_) {}
+                const existing = new Set(store.data.history.map(h => h.url));
+                for (const r of rows) {
+                    if (!r.url || existing.has(r.url)) continue;
+                    existing.add(r.url);
+                    const time = r.last_visit_time ? Math.floor(r.last_visit_time / 1000 - 11644473600000) : Date.now();
+                    store.data.history.push({
+                        id: crypto.randomUUID(),
+                        url: r.url,
+                        title: r.title || r.url,
+                        time: time > 0 ? time : Date.now()
+                    });
+                    result.history++;
+                }
+                store.data.history.sort((a, b) => b.time - a.time);
+                if (store.data.history.length > 10000) store.data.history.length = 10000;
+            }
+        } catch (_) {}
+    }
+
+    if (flags.wantCookies && Database) {
+        try {
+            const file = path.join(profile.path, 'Cookies');
+            if (fs.existsSync(file)) {
+                const tmp = file + '.neira-copy-' + Date.now();
+                fs.copyFileSync(file, tmp);
+                const db = new Database(tmp, { readonly: true, fileMustExist: true });
+                const rows = db.prepare('SELECT host_key, name, value, encrypted_value, path, expires_utc, is_secure, is_httponly FROM cookies').all();
+                db.close();
+                try { fs.unlinkSync(tmp); } catch (_) {}
+                const ses = activeSession();
+                const now = Date.now() / 1000;
+                for (const r of rows) {
+                    const expirySeconds = r.expires_utc ? Math.floor(r.expires_utc / 1000000 - 11644473600) : 0;
+                    if (expirySeconds && expirySeconds < now) continue;
+                    let value = r.value;
+                    if (!value && r.encrypted_value && r.encrypted_value.length) {
+                        value = decryptChromiumCookie(r.encrypted_value, b.id);
+                    }
+                    if (!value) continue;
+                    const url = `http${r.is_secure ? 's' : ''}://${r.host_key.replace(/^\./, '')}${r.path || '/'}`;
+                    try {
+                        await ses.cookies.set({
+                            url,
+                            name: r.name,
+                            value,
+                            domain: r.host_key,
+                            path: r.path || '/',
+                            secure: !!r.is_secure,
+                            httpOnly: !!r.is_httponly,
+                            expirationDate: expirySeconds || undefined
+                        });
+                        result.cookies++;
+                    } catch (_) {}
+                }
+            }
+        } catch (_) {}
+    }
+
+    if (flags.wantSearch && Database) {
+        try {
+            const file = path.join(profile.path, 'Web Data');
+            if (fs.existsSync(file)) {
+                const tmp = file + '.neira-copy-' + Date.now();
+                fs.copyFileSync(file, tmp);
+                const db = new Database(tmp, { readonly: true, fileMustExist: true });
+                const row = db.prepare('SELECT COUNT(*) AS n FROM keywords').get();
+                result.search = row ? row.n : 0;
+                db.close();
+                try { fs.unlinkSync(tmp); } catch (_) {}
+            }
+        } catch (_) {}
+    }
+
+    if (flags.wantSettings) {
+        try {
+            const file = path.join(profile.path, 'Preferences');
+            if (fs.existsSync(file)) {
+                const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
+                if (raw.homepage && typeof raw.homepage === 'string' && /^https?:/i.test(raw.homepage)) {
+                    store.data.settings.homepage = raw.homepage;
+                }
+                result.settings = 1;
+            }
+        } catch (_) {}
+    }
+}
+
+async function importFromFirefox(profile, flags, result) {
+    if (!Database) return;
+    if (flags.wantBookmarks || flags.wantHistory) {
+        try {
+            const file = path.join(profile.path, 'places.sqlite');
+            if (fs.existsSync(file)) {
+                const tmp = file + '.neira-copy-' + Date.now();
+                fs.copyFileSync(file, tmp);
+                const db = new Database(tmp, { readonly: true, fileMustExist: true });
+                if (flags.wantBookmarks) {
+                    const rows = db.prepare(`SELECT b.title, p.url FROM moz_bookmarks b JOIN moz_places p ON b.fk = p.id WHERE b.type = 1 AND p.url LIKE 'http%'`).all();
+                    const existing = new Set(store.data.bookmarks.map(b => b.url));
+                    for (const r of rows) {
+                        if (!r.url || existing.has(r.url)) continue;
+                        existing.add(r.url);
+                        store.data.bookmarks.push({ url: r.url, title: r.title || r.url });
+                        result.bookmarks++;
+                    }
+                }
+                if (flags.wantHistory) {
+                    const rows = db.prepare(`SELECT url, title, last_visit_date FROM moz_places WHERE url LIKE 'http%' AND last_visit_date IS NOT NULL ORDER BY last_visit_date DESC LIMIT 5000`).all();
+                    const existing = new Set(store.data.history.map(h => h.url));
+                    for (const r of rows) {
+                        if (!r.url || existing.has(r.url)) continue;
+                        existing.add(r.url);
+                        const time = r.last_visit_date ? Math.floor(r.last_visit_date / 1000) : Date.now();
+                        store.data.history.push({
+                            id: crypto.randomUUID(),
+                            url: r.url,
+                            title: r.title || r.url,
+                            time: time > 0 ? time : Date.now()
+                        });
+                        result.history++;
+                    }
+                    store.data.history.sort((a, b) => b.time - a.time);
+                    if (store.data.history.length > 2000) store.data.history.length = 2000;
+                }
+                db.close();
+                try { fs.unlinkSync(tmp); } catch (_) {}
+            }
+        } catch (_) {}
+    }
+    if (flags.wantCookies) {
+        try {
+            const file = path.join(profile.path, 'cookies.sqlite');
+            if (fs.existsSync(file)) {
+                const tmp = file + '.neira-copy-' + Date.now();
+                fs.copyFileSync(file, tmp);
+                const db = new Database(tmp, { readonly: true, fileMustExist: true });
+                const rows = db.prepare('SELECT host, name, value, path, expiry, isSecure, isHttpOnly FROM moz_cookies').all();
+                db.close();
+                try { fs.unlinkSync(tmp); } catch (_) {}
+                const ses = activeSession();
+                const now = Date.now() / 1000;
+                for (const r of rows) {
+                    if (r.expiry && r.expiry < now) continue;
+                    if (!r.value) continue;
+                    const url = `http${r.isSecure ? 's' : ''}://${r.host.replace(/^\./, '')}${r.path || '/'}`;
+                    try {
+                        await ses.cookies.set({
+                            url,
+                            name: r.name,
+                            value: r.value,
+                            domain: r.host,
+                            path: r.path || '/',
+                            secure: !!r.isSecure,
+                            httpOnly: !!r.isHttpOnly,
+                            expirationDate: r.expiry || undefined
+                        });
+                        result.cookies++;
+                    } catch (_) {}
+                }
+            }
+        } catch (_) {}
+    }
+}
+
+function decryptChromiumCookie(encryptedBuffer, browserId) {
+    if (process.platform !== 'win32') return '';
+    try {
+        const key = getChromiumKey(browserId);
+        if (!key) return '';
+        const buf = Buffer.from(encryptedBuffer);
+        if (buf.length < 15) return '';
+        const prefix = buf.slice(0, 3).toString('ascii');
+        if (prefix !== 'v10' && prefix !== 'v11') {
+            return dpapiDecryptRaw(buf).toString('utf8');
+        }
+        const nonce = buf.slice(3, 15);
+        const tag = buf.slice(buf.length - 16);
+        const ciphertext = buf.slice(15, buf.length - 16);
+        const decipher = crypto.createDecipheriv('aes-256-gcm', key, nonce);
+        decipher.setAuthTag(tag);
+        let out = decipher.update(ciphertext);
+        out = Buffer.concat([out, decipher.final()]);
+        return out.toString('utf8');
+    } catch (_) {
+        return '';
+    }
+}
+
+const chromiumKeyCache = new Map();
+
+function getChromiumKey(browserId) {
+    if (chromiumKeyCache.has(browserId)) return chromiumKeyCache.get(browserId);
+    try {
+        const b = BROWSER_DEFS.find(x => x.id === browserId);
+        if (!b) return null;
+        const root = b.root();
+        const localStateFile = path.join(root, 'Local State');
+        if (!fs.existsSync(localStateFile)) return null;
+        const raw = JSON.parse(fs.readFileSync(localStateFile, 'utf8'));
+        const b64 = raw && raw.os_crypt && raw.os_crypt.encrypted_key;
+        if (!b64) return null;
+        let buf = Buffer.from(b64, 'base64');
+        if (buf.slice(0, 5).toString('ascii') === 'DPAPI') buf = buf.slice(5);
+        const decrypted = dpapiDecryptRaw(buf);
+        chromiumKeyCache.set(browserId, decrypted);
+        return decrypted;
+    } catch (_) {
+        return null;
+    }
+}
+
+function dpapiDecryptRaw(buffer) {
+    try {
+        const { execFileSync } = require('child_process');
+        const b64 = Buffer.from(buffer).toString('base64');
+        const script = `$in = [Convert]::FromBase64String('${b64}')\nAdd-Type -AssemblyName System.Security\n$out = [System.Security.Cryptography.ProtectedData]::Unprotect($in, $null, 'CurrentUser')\n[Convert]::ToBase64String($out)`;
+        const out = execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-Command', script], {
+            encoding: 'utf8',
+            windowsHide: true,
+            timeout: 5000
+        }).trim();
+        return Buffer.from(out, 'base64');
+    } catch (_) {
+        return Buffer.alloc(0);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1947,6 +2618,21 @@ autoUpdater.on('update-downloaded', () => {
         if (result.response === 0) autoUpdater.quitAndInstall();
     });
 });
+function focusedInfo() {
+    for (const info of windows) {
+        if (info.win.isDestroyed()) continue;
+        if (info.win.isFocused()) return info;
+    }
+    return null;
+}
+function focusedInfo() {
+    for (const info of windows) {
+        if (info.win.isDestroyed()) continue;
+        if (info.win.isFocused()) return info;
+    }
+    return null;
+}
+defaultBrowser.init({ app, shell, handle, listen, windows, focusedInfo, infoFromContents, createWindow, sendTo });
 
 // ---------------------------------------------------------------------------
 // Lifecycle

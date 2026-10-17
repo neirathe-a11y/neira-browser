@@ -13,6 +13,11 @@ const on = channel => callback => {
 
 contextBridge.exposeInMainWorld('neira', {
     confirm: message => invoke('dialog:confirm', message),
+        rendererReady: () => send('renderer:ready'),
+    defaultBrowser: {
+        status: () => invoke('defaultbrowser:status'),
+        set: () => invoke('defaultbrowser:set')
+    },
     copy: text => invoke('clipboard:write', text),
     onPageContextMenu: (cb) => ipcRenderer.on('page-context-menu', (_e, payload) => cb(payload)),
     runMainAction: id => send('action:run', id),
@@ -51,7 +56,7 @@ contextBridge.exposeInMainWorld('neira', {
         exportFile: () => invoke('shortcuts:export'),
         importFile: () => invoke('shortcuts:import'),
         startRecording: id => send('shortcuts:record-start', id),
-        stopRecording: () => send('shortcuts:record-stop'),
+        stopRecording: () => send('shortcuts:stop-recording'),
         onChange: on('shortcuts:changed'),
         onRecordDone: on('shortcuts:record-done'),
         onRecordCancel: on('shortcuts:record-cancel'),
@@ -129,7 +134,6 @@ contextBridge.exposeInMainWorld('neira', {
         onUsage: on('parental:usage'),
         onBlocked: on('parental:blocked')
     },
-
     tracker: {
         status: host => invoke('tracker:status', host),
         setEnabled: on_ => invoke('tracker:set-enabled', on_),
@@ -144,5 +148,22 @@ contextBridge.exposeInMainWorld('neira', {
         remove: id => invoke('extensions:remove', id),
         setEnabled: (id, enabled) => invoke('extensions:set-enabled', id, enabled),
         onChange: on('extensions:changed')
-    }
+    },
+
+    // ---------- Neira Sweep ----------
+    sweep: {
+        scan: () => invoke('sweep:scan'),
+        run: (categories, level) => invoke('sweep:run', categories, level)
+    },
+
+    // ---------- Import from another browser ----------
+      importer: {
+        detect: () => invoke('importer:detect'),
+        scan: (browserId, profileId) => invoke('importer:scan', browserId, profileId),
+        run: (browserId, profileId, items) => invoke('importer:run', browserId, profileId, items),
+        markSeen: () => invoke('importer:mark-seen'),
+        openWizard: () => send('importer:open-wizard')
+    },
+        onImporterShowWizard: on('importer:show-wizard'),
+    
 });
