@@ -4221,6 +4221,7 @@ on('ai-remove', 'click', async () => {
     await neiraAI.remove($('ai-model').value);
     refreshAIStatus();
 });
+const askInput = $('ask-input');
 const askBtn = $('ask-btn');
 if (askInput && askBtn) {
     const submitAsk = () => {
@@ -4316,14 +4317,6 @@ on('downloads-btn', 'click', dlToggle);
 
     window.addEventListener('blur', () => { commitCycle(); });
 
-    document.addEventListener('keydown', e => {
-        const tag = document.activeElement ? document.activeElement.tagName : '';
-        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
-        if (e.altKey && e.key.toLowerCase() === 'a') {
-            e.preventDefault();
-            runSummary('');
-        }
-    });
 
     document.addEventListener('mousedown', e => {
         if (tabCtx && !tabCtx.hidden && !tabCtx.contains(e.target)) closeTabCtx();
