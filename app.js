@@ -360,7 +360,11 @@
             errorFor: null,
             favicon: '',
             loading: false,
-            groupId: null
+                                   groupId: null,
+            sleeping: false,
+            lastActive: Date.now(),
+            isMuted: false,
+            volume: 1.0,
         };
 
         const el = document.createElement('div');
@@ -381,7 +385,15 @@
         const initial = document.createElement('span');
         initial.className = 'tab-initial';
         initial.textContent = '•';
-        el.append(fav, spin, title, close, initial);
+                const audioIcon = document.createElement('span');
+        audioIcon.className = 'tab-audio';
+        audioIcon.textContent = '🔊';
+        audioIcon.title = 'Mute tab';
+        audioIcon.addEventListener('click', (e) => {
+            e.stopPropagation();
+            toggleMute(id);
+        });
+        el.append(fav, spin, audioIcon, title, close, initial);
 
         el.addEventListener('click', () => switchTab(id));
         el.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });
@@ -477,25 +489,19 @@
         wv.addEventListener('did-stop-loading', () => setLoading(false));
         wv.addEventListener('focus', () => { closeDropdown(false); closeTabSearch(false); });
 
-        wv.addEventListener('dom-ready', () => {
-            const firstReady = !tab.ready;
-            tab.ready = true;
-            if (firstReady && tab.isNewtab && tab.id === activeId) wv.focus();
-            try { wv.setZoomFactor(tab.zoom); } catch (_) { /* ignore */ }
-            tab.darkKey = null;
-            if (tab.forceDark) applyDark(tab);
-            if (tab.id === activeId || tab.id === splitActiveId) updateNavButtons();
-        });
 
-        wv.addEventListener('page-title-updated', e => {
-            tab.title = e.title || tab.title;
-            tab.titleEl.textContent = tab.title;
-            tab.titleEl.title = tab.title;
-            tab.initialEl.textContent = (tab.title.trim()[0] || '•').toUpperCase();
-            recordHistory(tab, tab.url);
-            if (tab.id === activeId) updateWindowTitle();
-            renderRail();
-        });
+           wv.addEventListener('dom-ready', () => {
+    const firstReady = !tab.ready;
+    tab.ready = true;
+    if (firstReady && tab.isNewtab && tab.id === activeId) wv.focus();
+    try { wv.setZoomFactor(tab.zoom); } catch (_) {}
+    tab.darkKey = null;
+    if (tab.forceDark) applyDark(tab);
+    if (tab.id === activeId || tab.id === splitActiveId) updateNavButtons();
+    if (tab.volume && tab.volume !== 1) setTabVolume(tab.id, tab.volume * 100);
+});
+   
+
 
         wv.addEventListener('page-favicon-updated', e => {
             tab.favicon = (e.favicons && e.favicons[0]) || '';
@@ -524,32 +530,28 @@
         wv.addEventListener('did-navigate', onNavigated);
         wv.addEventListener('did-navigate-in-page', onNavigated);
 
-        wv.addEventListener('did-fail-load', e => {
-            if (!e.isMainFrame || e.errorCode === -3) return;
-            tab.errorFor = e.validatedURL;
-            tab.title = 'Page failed to load';
-            tab.titleEl.textContent = tab.title;
-            tab.url = e.validatedURL;
-            if (tab.id === activeId) urlInput.value = tab.url;
-            const dark = settings.theme !== 'light';
-            const html = `<!doctype html><meta charset="utf-8"><title>Page failed to load</title>` +
-                `<body style="font:15px/1.6 system-ui,sans-serif;background:${dark ? '#1f1f1f' : '#fff'};color:${dark ? '#e1e1e1' : '#1e1e1e'};` +
-                `display:flex;align-items:center;justify-content:center;height:100vh;margin:0"><div style="max-width:520px;padding:24px">` +
-                `<h2 style="margin:0 0 8px">This page can't be reached</h2>` +
-                `<p style="margin:0 0 12px;word-break:break-all">${esc(e.validatedURL)}</p>` +
-                `<p style="margin:0;opacity:.7">${esc(e.errorDescription || 'Unknown error')} (${esc(e.errorCode)}). Press reload to try again.</p></div>`;
-            wv.setAttribute('src', 'data:text/html;charset=utf-8,' + encodeURIComponent(html));
-        });
+wv.addEventListener('did-fail-load', e => {
+    if (!e.isMainFrame || e.errorCode === -3) return;
+    if (e.errorCode !== -106) {
+        tab.title = 'Failed to load';
+        tab.titleEl.textContent = tab.title;
+        return;
+    }
+    tab.errorFor = e.validatedURL;
+    tab.title = 'No Internet';
+    tab.titleEl.textContent = tab.title;
+    tab.url = e.validatedURL;
+    if (tab.id === activeId) urlInput.value = tab.url;
+    wv.setAttribute('src', BASE + 'arcade.html');
+});
 
         wv.addEventListener('found-in-page', e => {
             const r = e.result;
             if (tab.id === activeId && r) findCount.textContent = r.matches ? `${r.activeMatchOrdinal}/${r.matches}` : '0/0';
         });
 
-        wv.addEventListener('context-menu', e => {
-            const params = e.params || {};
-            openPageContextMenu(tab.id, params, e.clientX || (params.x || 0), e.clientY || (params.y || 0));
-        });
+                wireAudioEvents(tab);
+
     }
 
     function pushMru(id) {
@@ -565,28 +567,32 @@
         document.title = (t && t.title && t.title !== 'New Tab' ? t.title + ' - ' : '') + (PRIVATE ? 'Neira Browser (Private)' : 'Neira Browser');
     }
 
-    function showTab(id) {
+        function showTab(id) {
         const target = tabs.find(t => t.id === id);
         if (!target) return;
+
+        if (target.sleeping) wakeTab(target);
+        target.lastActive = Date.now();
+
         activeId = id;
 
         if (isSplitScreen) {
-            if (!splitActiveId || splitActiveId === activeId) {
-                const other = tabs.find(t => t.id !== activeId);
-                splitActiveId = other ? other.id : activeId;
-            }
-            for (const t of tabs) {
-                const on = t.id === activeId || t.id === splitActiveId;
-                t.el.classList.toggle('active', t.id === activeId);
-                t.webview.classList.toggle('active', on);
-            }
-        } else {
-            for (const t of tabs) {
-                const on = t.id === id;
-                t.el.classList.toggle('active', on);
-                t.webview.classList.toggle('active', on);
-            }
-        }
+    if (!splitActiveId || splitActiveId === activeId) {
+        const other = tabs.find(t => t.id !== activeId);
+        splitActiveId = other ? other.id : activeId;
+    }
+    for (const t of tabs) {
+        const on = t.id === activeId || t.id === splitActiveId;
+        t.el.classList.toggle('active', t.id === activeId);
+        if (t.webview) t.webview.classList.toggle('active', on);
+    }
+} else {
+    for (const t of tabs) {
+        const on = t.id === id;
+        t.el.classList.toggle('active', on);
+        if (t.webview) t.webview.classList.toggle('active', on);
+    }
+}
 
         target.el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
         urlInput.value = barText(target);
@@ -636,7 +642,7 @@
             if (closedTabs.length > 25) closedTabs.shift();
         }
         tab.el.remove();
-        tab.webview.remove();
+        if (tab.webview) tab.webview.remove();
         tabs.splice(index, 1);
         mru = mru.filter(x => x !== id);
         cycle = null;
@@ -754,7 +760,7 @@
         const url = resolveInput(text);
         if (!url) { toast('That page does not exist'); return; }
         if (opts && opts.newTab) { createTab(url, { resolved: true }); return; }
-        const source = tabs.find(t => t.ready && t.webview.getWebContentsId() === (opts && opts.replaceWcId));
+        const source = tabs.find(t => t.ready && t.webview && t.webview.getWebContentsId() === (opts && opts.replaceWcId));
         if (!source) { createTab(url, { resolved: true }); return; }
         navigate(text, source);
     }
@@ -1143,7 +1149,6 @@
 
         add('New tab to the right', '', () => {
             createTab(newTabUrl(), { after: tab.id, activate: false });
-                    api.rendererReady();
         });
         add('Reload', shortcutMap.reload || '', () => {
             if (tab.ready) tab.webview.reload();
@@ -1164,11 +1169,51 @@
             }
         });
         sep();
-        add('Pin tab', '', () => {}, { disabled: true });
-        add('Mute site', '', () => {
-            if (!tab.ready) return;
-            try { tab.webview.setAudioMuted(!tab.webview.isAudioMuted()); } catch (_) {}
+                add('Pin tab', '', () => {}, { disabled: true });
+        sep();
+        add(tab.isMuted ? 'Unmute tab' : 'Mute tab', '', () => {
+            toggleMute(tabId);
         });
+        // Volume control sub-menu
+        const volBtn = document.createElement('button');
+        volBtn.className = 'ctx-item';
+        volBtn.setAttribute('role', 'menuitem');
+        
+        const volLabel = document.createElement('span');
+        volLabel.textContent = 'Volume:';
+        const volVal = document.createElement('span');
+        volVal.className = 'ctx-hint';
+        volVal.textContent = Math.round((tab.volume || 1) * 100) + '%';
+        volBtn.append(volLabel, volVal);
+        
+        const sliderWrap = document.createElement('div');
+        sliderWrap.style.padding = '8px 12px';
+        sliderWrap.style.display = 'none';
+        
+        const slider = document.createElement('input');
+        slider.type = 'range';
+        slider.min = '0';
+        slider.max = '500';
+        slider.step = '10';
+        slider.value = Math.round((tab.volume || 1) * 100);
+        slider.style.width = '100%';
+        slider.style.cursor = 'pointer';
+        slider.style.accentColor = '#b473ff';
+        
+        slider.addEventListener('input', (e) => {
+            const num = parseInt(e.target.value, 10);
+            volVal.textContent = num + '%';
+            setTabVolume(tabId, num);
+        });
+        
+        sliderWrap.appendChild(slider);
+        volBtn.addEventListener('click', (e) => {
+            e.stopPropagation(); // Keep the menu open
+            sliderWrap.style.display = sliderWrap.style.display === 'none' ? 'block' : 'none';
+        });
+        
+        tabCtx.appendChild(volBtn);
+        tabCtx.appendChild(sliderWrap);
         sep();
         add('Close tab', shortcutMap.close_tab || '', () => closeTab(tabId));
         add('Close other tabs', shortcutMap.close_other_tabs || '', () => {
@@ -1316,8 +1361,12 @@
             pageCtx.appendChild(s);
         };
 
-        const canGoBack = params.canGoBack;
-        const canGoForward = params.canGoForward;
+       let canGoBack = false, canGoForward = false;
+try {
+    const nav = tab.webview.navigationHistory;
+    canGoBack = nav ? nav.canGoBack() : tab.webview.canGoBack();
+    canGoForward = nav ? nav.canGoForward() : tab.webview.canGoForward();
+} catch (_) {}
         const isEditable = params.isEditable;
         const hasSelection = params.selectionText && params.selectionText.trim().length > 0;
         const linkURL = params.linkURL || '';
@@ -1346,31 +1395,21 @@
         if (linkURL) {
             add('Open link in new tab', '', () => createTab(linkURL, { activate: false }));
             add('Copy link address', '', () => api.copy(linkURL).then(() => toast('Link copied')));
-            add('Download link', '', () => {
-                const a = document.createElement('a');
-                a.href = linkURL;
-                a.download = '';
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                toast('Download started');
-            });
+           add('Download link', '', () => {
+    api.downloadURL(wcId, linkURL).then(r => toast(r.ok ? 'Download started' : 'Could not download'));
+});
             sep();
         }
 
         if (mediaType === 'image' && srcURL) {
             add('Open image in new tab', '', () => createTab(srcURL, { activate: false }));
-            add('Copy image', '', () => tryRun(wcId, 'copyImageAt', params.x, params.y));
+            add('Copy image', '', () => {
+    api.copyImageAt(wcId, params.x, params.y).then(ok => ok && toast('Image copied'));
+});
             add('Copy image address', '', () => api.copy(srcURL).then(() => toast('Image URL copied')));
             add('Download image', '', () => {
-                const a = document.createElement('a');
-                a.href = srcURL;
-                a.download = '';
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                toast('Download started');
-            });
+    api.downloadURL(wcId, srcURL).then(r => toast(r.ok ? 'Download started' : 'Could not download'));
+});
             sep();
         }
 
@@ -1964,6 +2003,7 @@
 
     const asBody = $('assistant-body');
     const asEmpty = $('as-empty');
+    const sheet = $('as-sheet') || { hidden: true };
 
     const PAGE_EXTRACT_JS = '(' + (() => {
         const clean = t => (t || '').replace(/\s+/g, ' ').trim();
@@ -2513,7 +2553,7 @@
         card.scrollIntoView({ block: 'start', behavior: 'smooth' });
     }
 
-    async function runAsk(question) {
+        async function runAsk(question) {
         const my = ++runId;
         const tab = activeTab();
         const readyTab = !!tab && !tab.internal && tab.ready;
@@ -2524,17 +2564,52 @@
         for (let i = 0; i < 3; i++) card.appendChild(node('div', 'as-skel'));
         card.scrollIntoView({ block: 'end', behavior: 'smooth' });
 
+        if (!readyTab) { card.replaceChildren(node('p', 'as-lead', 'Open a web page or PDF first, then ask your question.')); return; }
+        
         if (!settings.localAI) {
-            card.replaceChildren(node('p', 'as-lead', 'Questions about a page need Local AI. Turn it on in the ⚙ settings above.'));
-            openSheet();
+            // SMART OFFLINE FALLBACK (Keyword matching from the page)
+            try {
+                const data = await tab.webview.executeJavaScript(PAGE_EXTRACT_JS);
+                const fullText = (data.fallback || '').replace(/\s+/g, ' ');
+                
+                // Very basic keyword search
+                const keywords = question.toLowerCase().split(' ').filter(w => w.length > 3);
+                const sentences = fullText.split(/(?<=[.!?])\s+/);
+                let bestSentences = [];
+                
+                for (const s of sentences) {
+                    let score = 0;
+                    for (const k of keywords) if (s.toLowerCase().includes(k)) score++;
+                    if (score > 0) bestSentences.push({ text: s, score });
+                }
+                
+                bestSentences.sort((a, b) => b.score - a.score);
+                const top = bestSentences.slice(0, 3).map(s => s.text);
+                
+                card.replaceChildren();
+                if (top.length > 0) {
+                    card.appendChild(node('span', 'as-badge', '🔍 Offline Search'));
+                    card.appendChild(node('h3', '', 'Relevant text from the page:'));
+                    const ul = node('ul', 'as-points');
+                    for (const t of top) ul.appendChild(node('li', '', t));
+                    card.appendChild(ul);
+                    card.appendChild(node('p', 'as-note', 'Turn on Local AI in the ⚙ settings above for a fully written answer.'));
+                } else {
+                    card.appendChild(node('p', 'as-lead', 'I couldn\'t find the exact answer in the text. Turn on Local AI for a smarter response.'));
+                }
+            } catch (_) {
+                card.replaceChildren(node('p', 'as-lead', 'Could not read the page. Try reloading.'));
+            }
             return;
         }
-        if (!readyTab) { card.replaceChildren(node('p', 'as-lead', 'Open a web page first, then ask your question.')); return; }
+
+        // LOCAL AI BRANCH
         const key = currentModelKey();
         try {
             const data = await tab.webview.executeJavaScript(PAGE_EXTRACT_JS);
             await prepareModel(card, key);
             if (my !== runId) return;
+            
             await streamAnswer(card, {
                 meta: 'Answer from this page · ' + neiraAI.MODELS[key].name,
                 title: '',
@@ -2546,10 +2621,8 @@
             if (!err || !err.reason) neiraAI.unload();
             card.replaceChildren(node('p', 'as-lead', aiNote(err).replace(' Here is the standard summary instead.', '')));
         }
+             
     }
-
-    const sheet = $('as-sheet');
-
     function buildAISheet() {
         const select = $('ai-model');
         if (!select) return;
@@ -3618,18 +3691,6 @@
         cmdk.addEventListener('mousedown', e => { if (e.target === cmdk) cmdkClose(); });
     }
 
-    document.addEventListener('keydown', e => {
-        const ctrl = e.ctrlKey || e.metaKey;
-        if (ctrl && (e.key === 'k' || e.key === 'K') && !e.shiftKey && !e.altKey) {
-            e.preventDefault();
-            if (cmdk && !cmdk.hidden) cmdkClose();
-            else cmdkOpen();
-        } else if (ctrl && e.shiftKey && (e.key === 'p' || e.key === 'P')) {
-            e.preventDefault();
-            if (cmdk && !cmdk.hidden) cmdkClose();
-            else cmdkOpen();
-        }
-    });
 
     api.history.onChange(list => { historyCache = list || []; });
     api.speedDial.get().then(list => { speedDialCache = list || []; }).catch(() => {});
@@ -4111,75 +4172,80 @@
         }
     }
 
-    backBtn.addEventListener('click', ACTIONS.go_back);
-    forwardBtn.addEventListener('click', ACTIONS.go_forward);
-    reloadBtn.addEventListener('click', () => (reloadBtn.dataset.stop ? stopLoading() : reloadTab(false)));
-    $('new-tab-btn').addEventListener('click', () => runAction('new_tab'));
-    $('assistant-btn').addEventListener('click', () => setAssistantOpen(assistant.hidden));
-    $('assistant-close').addEventListener('click', () => setAssistantOpen(false));
-    summarizeBtn.addEventListener('click', () => runSummary(null));
-    if (splitScreenBtn) splitScreenBtn.addEventListener('click', toggleSplitScreen);
-    $('summarize-sel-btn').addEventListener('click', () => runSummary(''));
-    $('assistant-clear').addEventListener('click', () => {
-        assistantOut.replaceChildren();
-        asEmpty.hidden = false;
-        lastRequest = null;
-    });
-    $('assistant-settings').addEventListener('click', () => (sheet.hidden ? openSheet() : closeSheet()));
-    $('ai-enable').addEventListener('change', e => api.settings.set('localAI', e.target.checked));
-    $('ai-model').addEventListener('change', e => api.settings.set('localAIModel', e.target.value));
-    $('ai-download').addEventListener('click', async () => {
-        const key = $('ai-model').value;
-        const button = $('ai-download');
-        const bar = $('ai-bar');
-        const fill = $('ai-bar-fill');
-        const status = $('ai-status');
-        button.disabled = true;
-        bar.hidden = false;
-        fill.style.width = '0%';
-        try {
-            await neiraAI.load(key, p => {
-                const pct = Math.round((p.progress || 0) * 100);
-                fill.style.width = pct + '%';
-                status.textContent = `Downloading… ${pct}%`;
-            });
-        } catch (err) {
-            status.textContent = (err && err.message) || 'The download failed. Check your connection and try again.';
-            bar.hidden = true;
-            button.disabled = false;
-            return;
-        }
+  const on = (id, ev, fn) => { const el = $(id); if (el) el.addEventListener(ev, fn); };
+
+if (backBtn) backBtn.addEventListener('click', ACTIONS.go_back);
+if (forwardBtn) forwardBtn.addEventListener('click', ACTIONS.go_forward);
+if (reloadBtn) reloadBtn.addEventListener('click', () => (reloadBtn.dataset.stop ? stopLoading() : reloadTab(false)));
+on('new-tab-btn', 'click', () => runAction('new_tab'));
+on('assistant-btn', 'click', () => setAssistantOpen(assistant.hidden));
+on('assistant-close', 'click', () => setAssistantOpen(false));
+if (summarizeBtn) summarizeBtn.addEventListener('click', () => runSummary(null));
+if (splitScreenBtn) splitScreenBtn.addEventListener('click', toggleSplitScreen);
+on('summarize-sel-btn', 'click', () => runSummary(''));
+on('assistant-clear', 'click', () => {
+    assistantOut.replaceChildren();
+    asEmpty.hidden = false;
+    lastRequest = null;
+});
+on('assistant-settings', 'click', () => (sheet.hidden ? openSheet() : closeSheet()));
+on('ai-enable', 'change', e => api.settings.set('localAI', e.target.checked));
+on('ai-model', 'change', e => api.settings.set('localAIModel', e.target.value));
+on('ai-download', 'click', async () => {
+    const key = $('ai-model').value;
+    const button = $('ai-download');
+    const bar = $('ai-bar');
+    const fill = $('ai-bar-fill');
+    const status = $('ai-status');
+    button.disabled = true;
+    bar.hidden = false;
+    fill.style.width = '0%';
+    try {
+        await neiraAI.load(key, p => {
+            const pct = Math.round((p.progress || 0) * 100);
+            fill.style.width = pct + '%';
+            status.textContent = `Downloading… ${pct}%`;
+        });
+    } catch (err) {
+        status.textContent = (err && err.message) || 'The download failed. Check your connection and try again.';
         bar.hidden = true;
         button.disabled = false;
-        refreshAIStatus();
-    });
-    $('ai-remove').addEventListener('click', async () => {
-        if (!(await api.confirm('Remove the downloaded Local AI model from this device? You can download it again later.'))) return;
-        await neiraAI.remove($('ai-model').value);
-        refreshAIStatus();
-    });
-    const askInput = $('ask-input');
+        return;
+    }
+    bar.hidden = true;
+    button.disabled = false;
+    refreshAIStatus();
+});
+on('ai-remove', 'click', async () => {
+    if (!(await api.confirm('Remove the downloaded Local AI model from this device? You can download it again later.'))) return;
+    await neiraAI.remove($('ai-model').value);
+    refreshAIStatus();
+});
+const askBtn = $('ask-btn');
+if (askInput && askBtn) {
     const submitAsk = () => {
         const question = askInput.value.trim();
         if (!question) return;
         askInput.value = '';
         runAsk(question);
     };
-    $('ask-btn').addEventListener('click', submitAsk);
+    askBtn.addEventListener('click', submitAsk);
     askInput.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); submitAsk(); } });
-    $('length-seg').addEventListener('click', e => {
-        const b = e.target.closest('button[data-len]');
-        if (!b) return;
-        assistantLen = b.dataset.len;
-        for (const x of $('length-seg').querySelectorAll('button')) {
-            x.classList.toggle('active', x === b);
-            x.setAttribute('aria-checked', String(x === b));
-        }
-        if (lastRequest) runSummary(lastRequest.selected);
-    });
-    $('history-toggle').addEventListener('click', () => openInternal('history'));
-    if (sweepBtn) sweepBtn.addEventListener('click', openSweepSidebar);
-    $('downloads-btn').addEventListener('click', dlToggle);
+}
+const lengthSeg = $('length-seg');
+if (lengthSeg) lengthSeg.addEventListener('click', e => {
+    const b = e.target.closest('button[data-len]');
+    if (!b) return;
+    assistantLen = b.dataset.len;
+    for (const x of lengthSeg.querySelectorAll('button')) {
+        x.classList.toggle('active', x === b);
+        x.setAttribute('aria-checked', String(x === b));
+    }
+    if (lastRequest) runSummary(lastRequest.selected);
+});
+on('history-toggle', 'click', () => openInternal('history'));
+if (sweepBtn) sweepBtn.addEventListener('click', openSweepSidebar);
+on('downloads-btn', 'click', dlToggle);
     avatarBtn.addEventListener('click', openAvatarMenu);
     menuBtn.addEventListener('click', openAppMenu);
     bookmarkBtn.addEventListener('click', toggleBookmark);
@@ -4288,6 +4354,141 @@
             openPageContextMenu(tab.id, params, mx, my);
         });
     }
+    // -----------------------------------------------------------------------
+    // Tab Sleep (Memory Saver)
+    // -----------------------------------------------------------------------
+    const SLEEP_TIMEOUT_MS = 15 * 60 * 1000; // 15 minutes
+    const SLEEP_CHECK_INTERVAL = 60 * 1000; // Check every 1 minute
+
+    function putTabToSleep(tab) {
+        if (tab.sleeping || tab.id === activeId || tab.id === splitActiveId) return;
+        if (tab.internal || !tab.ready) return;
+
+        tab.sleeping = true;
+        tab.ready = false;
+        tab.sleepUrl = tab.webview.getURL();
+
+        tab.webview.remove();
+        tab.webview = null;
+
+        tab.el.classList.add('sleeping');
+        tab.titleEl.textContent = tab.title + ' (Sleeping)';
+        tab.spin.hidden = true;
+        
+        renderRail();
+    }
+
+    function wakeTab(tab) {
+        if (!tab.sleeping) return;
+        tab.sleeping = false;
+        tab.ready = false;
+        tab.el.classList.remove('sleeping');
+        tab.titleEl.textContent = tab.title;
+        
+        const wv = document.createElement('webview');
+        wv.setAttribute('src', withPrivateFlag(tab.sleepUrl));
+        if (PRIVATE && !tab.internal) wv.setAttribute('partition', PARTITION);
+        
+        tab.webview = wv;
+        wireWebview(tab);
+        viewsContainer.appendChild(wv);
+        
+        if (tab.id === activeId) wv.classList.add('active');
+        
+        renderRail();
+    }
+
+    setInterval(() => {
+        const now = Date.now();
+        for (const tab of tabs) {
+            if (tab.id === activeId || tab.id === splitActiveId || tab.sleeping) continue;
+            if (tab.lastActive && (now - tab.lastActive > SLEEP_TIMEOUT_MS)) {
+                putTabToSleep(tab);
+            }
+        }
+    }, SLEEP_CHECK_INTERVAL);
+    // -----------------------------------------------------------------------
+    // Audio / Volume Control
+    // -----------------------------------------------------------------------
+    function toggleMute(id) {
+        const tab = tabs.find(t => t.id === id);
+        if (!tab || !tab.webview) return;
+        tab.isMuted = !tab.isMuted;
+        try { tab.webview.setAudioMuted(tab.isMuted); } catch(_) {}
+        
+        const icon = tab.el.querySelector('.tab-audio');
+        if (icon) {
+            icon.textContent = tab.isMuted ? '🔇' : '🔊';
+            icon.title = tab.isMuted ? 'Unmute tab' : 'Mute tab';
+        }
+        tab.el.classList.toggle('audio-muted', tab.isMuted);
+    }
+
+    async function setTabVolume(id, percent) {
+        const tab = tabs.find(t => t.id === id);
+        if (!tab || !tab.webview) return;
+
+        tab.volume = percent / 100;
+
+        if (percent > 100) {
+            const multiplier = percent / 100;
+            const js = `(() => {
+                try {
+                    if (!window.__neiraAudioCtx) {
+                        window.__neiraAudioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                        window.__neiraGainNode = window.__neiraAudioCtx.createGain();
+                        window.__neiraGainNode.connect(window.__neiraAudioCtx.destination);
+                    }
+                    if (window.__neiraAudioCtx.state === 'suspended') window.__neiraAudioCtx.resume();
+                    window.__neiraGainNode.gain.value = ${multiplier};
+
+                    const hook = media => {
+                        if (!media || media.__neiraSource) return;
+                        try {
+                            media.__neiraSource = window.__neiraAudioCtx.createMediaElementSource(media);
+                            media.__neiraSource.connect(window.__neiraGainNode);
+                        } catch (e) {}
+                    };
+                    document.querySelectorAll('audio, video').forEach(hook);
+
+                    // Watch for media that gets added later (YouTube re-creates the element on quality change)
+                    if (!window.__neiraMediaObserver) {
+                        window.__neiraMediaObserver = new MutationObserver(muts => {
+                            for (const m of muts) {
+                                for (const n of m.addedNodes) {
+                                    if (!n || n.nodeType !== 1) continue;
+                                    if (n.tagName === 'AUDIO' || n.tagName === 'VIDEO') hook(n);
+                                    else if (n.querySelectorAll) n.querySelectorAll('audio, video').forEach(hook);
+                                }
+                            }
+                        });
+                        window.__neiraMediaObserver.observe(document.documentElement, { childList: true, subtree: true });
+                    }
+                    return true;
+                } catch (e) { return String(e); }
+            })()`;
+            try { await tab.webview.executeJavaScript(js); } catch(_) {}
+        } else {
+            const js = `(() => {
+                try {
+                    if (window.__neiraGainNode) window.__neiraGainNode.gain.value = 1;
+                    document.querySelectorAll('audio, video').forEach(m => { m.volume = ${percent / 100}; });
+                    return true;
+                } catch (e) { return String(e); }
+            })()`;
+            try { await tab.webview.executeJavaScript(js); } catch(_) {}
+        }
+    }
+
+    function wireAudioEvents(tab) {
+        const wv = tab.webview;
+        if (!wv) return;
+
+        wv.addEventListener('media-started-playing', () => {
+            const icon = tab.el.querySelector('.tab-audio');
+            if (icon) icon.classList.add('visible');
+        });
+    }
 
     async function init() {
         bindWindowControls();
@@ -4316,8 +4517,20 @@
         api.onAction(runAction);
         api.onModifierReleased(commitCycle);
         api.onOpenInput(openFromPage);
+                if (api.onPagePointer) {
+    api.onPagePointer(() => {
+        closeDropdown(false);
+        closeProfilePop(false);
+        closePageCtx();
+        closeTabCtx();
+        closeRailCtx();
+        closeGroupPop();
+        closeTrackerPop();
+    });
+}
         api.onSummarizeText(text => runSummary(text && text.trim() ? text : null));
-        api.onOpenUrl((url, opts) => {
+               api.onOpenUrl((url, opts) => {
+            // a link/file that launched Neira replaces the empty start tab instead of sitting next to it
             const startTab = opts && opts.replaceStartTab && tabs.length === 1 && tabs[0].isNewtab ? tabs[0] : null;
             createTab(url, { activate: !(opts && opts.background), resolved: /^file:/i.test(url) });
             if (startTab) closeTab(startTab.id);
@@ -4326,6 +4539,7 @@
         api.shortcuts.onChange(({ map }) => { shortcutMap = map; applyHints(); });
         api.bookmarks.onChange(list => { bookmarks = list; renderBookmarks(); updateStar(); });
     createTab(newTabUrl());
+            api.rendererReady(); // tells the main process that links and files can be sent to this window now
         maybeShowImportWizard();
     }
     // -----------------------------------------------------------------------

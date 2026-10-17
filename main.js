@@ -10,9 +10,9 @@ initialize('A-EU-3606599135');
 
 const path = require('path');
 const fs = require('fs');
-const defaultBrowser = require('./default-browser');
 const crypto = require('crypto');
 const { fileURLToPath, pathToFileURL } = require('url');
+const defaultBrowser = require('./default-browser');
 const Shortcuts = require('./shortcuts');
 const { createStore } = require('./store');
 const { assetResponse, VIDEO_EXT, NAME_RE } = require('./assets');
@@ -645,6 +645,9 @@ function accelerator(id) {
 }
 
 function setupGuest(info, wc) {
+        wc.on('input-event', (_e, input) => {
+        if (input.type === 'mouseDown' && input.button !== 'right') sendTo(info, 'page:pointer');
+    });
     const enforceParental = (ev, url) => {
         guardNavigation(wc, ev, url);
         if (ev.defaultPrevented) return;
@@ -711,7 +714,7 @@ app.on('web-contents-created', (_e, contents) => {
         webPreferences.contextIsolation = true;
         webPreferences.sandbox = true;
         webPreferences.webSecurity = true;
-                webPreferences.plugins = true;
+        webPreferences.plugins = true; // lets the built-in PDF viewer run inside tabs
         webPreferences.allowRunningInsecureContent = false;
         delete params.allowpopups;
 
@@ -1371,6 +1374,22 @@ function registerIpc() {
             return { ok: false };
         }
     });
+    handle('page:copy-image-at', (event, wcId, x, y) => {
+    const info = infoFromContents(event.sender);
+    const target = webContents.fromId(wcId);
+    if (!info || !target || infoFromContents(target) !== info) return false;
+    try { target.copyImageAt(Math.round(x), Math.round(y)); return true; }
+    catch (_) { return false; }
+});
+
+handle('page:download-url', (event, wcId, url) => {
+    const info = infoFromContents(event.sender);
+    const target = webContents.fromId(wcId);
+    if (!info || !target || infoFromContents(target) !== info) return { ok: false };
+    if (!/^https?:/i.test(url)) return { ok: false };
+    try { target.downloadURL(url); return { ok: true }; }
+    catch (_) { return { ok: false }; }
+});
 
     handle('browsing:clear', async event => {
         const win = parentOf(event);
@@ -2632,8 +2651,8 @@ function focusedInfo() {
     }
     return null;
 }
-defaultBrowser.init({ app, shell, handle, listen, windows, focusedInfo, infoFromContents, createWindow, sendTo });
 
+defaultBrowser.init({ app, shell, handle, listen, windows, focusedInfo, infoFromContents, createWindow, sendTo });
 // ---------------------------------------------------------------------------
 // Lifecycle
 // ---------------------------------------------------------------------------

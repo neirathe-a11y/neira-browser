@@ -5,8 +5,10 @@
 //  - Reads the link or file from the command line (Windows/Linux) and from open-url/open-file (macOS).
 //  - Settings page: shows whether Neira is the default and opens the system place where you choose it.
 //
-// Windows only lets the *user* pick a default browser, so installer.nsh registers Neira in
-// "Settings > Apps > Default apps"; the button here just takes people there.
+// Windows only lets the *user* pick a default browser, so Neira registers itself in
+// "Settings > Apps > Default apps" (per user, no admin needed) every time the installed app starts.
+// Because it lives in the app, everyone who updates gets it; no installer script is needed.
+// The button on the Settings page just takes people to the Windows page where they pick Neira.
 const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
@@ -50,6 +52,75 @@ function regValue(key, name) {
             resolve(err ? '' : parseRegValue(stdout, name));
         });
     });
+}
+
+// ---------------------------------------------------------------------------
+// Windows: register Neira as a browser / PDF viewer candidate (HKEY_CURRENT_USER only)
+// ---------------------------------------------------------------------------
+const REG_SCHEMA = 1; // bump to rewrite the entries on the next start
+const REGISTERED_EXT = ['.pdf', '.html', '.htm', '.xhtml', '.svg', '.png', '.jpg', '.jpeg', '.gif', '.webp', '.mp4', '.webm'];
+
+const regEscape = text => String(text).replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+
+// The text of a .reg file that registers the app at `exe`.
+function buildRegFile(exe) {
+    const command = regEscape('"' + exe + '"');
+    const commandWithFile = regEscape('"' + exe + '" "%1"');
+    const icon = regEscape(exe + ',0');
+    const lines = ['Windows Registry Editor Version 5.00', ''];
+    const key = (subkey, values) => {
+        lines.push('[HKEY_CURRENT_USER\\' + subkey + ']');
+        for (const [name, data] of values) lines.push((name === '' ? '@' : '"' + name + '"') + '=' + data);
+        lines.push('');
+    };
+    const text = v => '"' + regEscape(v) + '"';
+    const raw = v => '"' + v + '"'; // already escaped
+
+    key('Software\\Classes\\NeiraURL', [['', text('Neira URL')], ['URL Protocol', text('')]]);
+    key('Software\\Classes\\NeiraURL\\DefaultIcon', [['', raw(icon)]]);
+    key('Software\\Classes\\NeiraURL\\shell\\open\\command', [['', raw(commandWithFile)]]);
+    key('Software\\Classes\\NeiraFile', [['', text('Neira Document')]]);
+    key('Software\\Classes\\NeiraFile\\DefaultIcon', [['', raw(icon)]]);
+    key('Software\\Classes\\NeiraFile\\shell\\open\\command', [['', raw(commandWithFile)]]);
+
+    const app = 'Software\\Clients\\StartMenuInternet\\Neira';
+    key(app, [['', text('Neira')]]);
+    key(app + '\\DefaultIcon', [['', raw(icon)]]);
+    key(app + '\\shell\\open\\command', [['', raw(command)]]);
+    key(app + '\\Capabilities', [
+        ['ApplicationName', text('Neira')],
+        ['ApplicationDescription', text('Neira Browser')],
+        ['ApplicationIcon', raw(icon)]
+    ]);
+    key(app + '\\Capabilities\\URLAssociations', [['http', text('NeiraURL')], ['https', text('NeiraURL')]]);
+    key(app + '\\Capabilities\\FileAssociations', REGISTERED_EXT.map(ext => [ext, text('NeiraFile')]));
+    for (const ext of REGISTERED_EXT) key('Software\\Classes\\' + ext + '\\OpenWithProgids', [['NeiraFile', 'hex(0):']]);
+    key('Software\\RegisteredApplications', [['Neira', text('Software\\Clients\\StartMenuInternet\\Neira\\Capabilities')]]);
+    return lines.join('\r\n');
+}
+
+function importRegFile(app, content) {
+    return new Promise((resolve, reject) => {
+        const file = path.join(app.getPath('temp'), 'neira-default-apps-' + process.pid + '.reg');
+        try { fs.writeFileSync(file, '\ufeff' + content, 'utf16le'); } catch (e) { reject(e); return; }
+        execFile('reg', ['import', file], { windowsHide: true, timeout: 15000 }, err => {
+            try { fs.unlinkSync(file); } catch (_) { /* temp file */ }
+            if (err) reject(err); else resolve();
+        });
+    });
+}
+
+// Writes the entries when they are missing, or the app moved/updated its registration format.
+// Returns true when it wrote them.
+async function ensureWindowsRegistration({ app, exe, query = regValue, importReg = content => importRegFile(app, content) }) {
+    const markerFile = path.join(app.getPath('userData'), 'default-apps.json');
+    let marker = {};
+    try { marker = JSON.parse(fs.readFileSync(markerFile, 'utf8')); } catch (_) { /* first run */ }
+    const present = await query('HKCU\\Software\\RegisteredApplications', 'Neira');
+    if (present && marker.exe === exe && marker.schema === REG_SCHEMA) return false;
+    await importReg(buildRegFile(exe));
+    try { fs.writeFileSync(markerFile, JSON.stringify({ exe, schema: REG_SCHEMA })); } catch (_) { /* tries again next start */ }
+    return true;
 }
 
 async function windowsStatus() {
@@ -129,7 +200,13 @@ function init({ app, shell, handle, listen, windows, focusedInfo, infoFromConten
         if (OPEN_EXT.has(path.extname(file).toLowerCase())) open([pathToFileURL(file).href]);
     });
 
-    app.whenReady().then(() => { if (pending.length) tryFlush(); });
+    app.whenReady().then(() => {
+        if (pending.length) tryFlush();
+        // installed Windows app: make sure Neira is listed in Settings > Default apps (runs quietly in the background)
+        if (process.platform === 'win32' && app.isPackaged) {
+            ensureWindowsRegistration({ app, exe: process.execPath }).catch(err => console.error('default apps registration failed:', err && err.message));
+        }
+    });
 
     // the browser window says its tabs are ready to receive links (app.js calls neira.rendererReady())
     listen('renderer:ready', event => {
@@ -163,4 +240,4 @@ function init({ app, shell, handle, listen, windows, focusedInfo, infoFromConten
     return true;
 }
 
-module.exports = { init, urlsFromArgv, parseRegValue };
+module.exports = { init, urlsFromArgv, parseRegValue, buildRegFile, ensureWindowsRegistration };

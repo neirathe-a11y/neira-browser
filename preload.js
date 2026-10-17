@@ -12,7 +12,10 @@ const on = channel => callback => {
 };
 
 contextBridge.exposeInMainWorld('neira', {
+    copyImageAt: (wcId, x, y) => invoke('page:copy-image-at', wcId, x, y),
+downloadURL: (wcId, url) => invoke('page:download-url', wcId, url),
     confirm: message => invoke('dialog:confirm', message),
+    
         rendererReady: () => send('renderer:ready'),
     defaultBrowser: {
         status: () => invoke('defaultbrowser:status'),
@@ -40,6 +43,7 @@ contextBridge.exposeInMainWorld('neira', {
     onOpenUrl: on('open-url'),
     onModifierReleased: on('shortcut:modifier-released'),
     onOpenInput: on('open-input'),
+        onPagePointer: on('page:pointer'),
     onSummarizeText: on('assistant:summarize'),
     screenshot: webContentsId => invoke('page:screenshot', webContentsId),
 
