@@ -247,7 +247,10 @@
         .modal-card h3 { font-size: 16px; }
         .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
         .form-error { color: var(--danger); font-size: 13px; min-height: 16px; }
-
+.perm-site { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
+.perm-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: var(--row-pad); background: var(--accent-soft); }
+.perm-origin { font-size: 14px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.perm-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: var(--row-pad); border-top: 1px solid var(--card-border); }
         /* ---------- Extensions ---------- */
         .ext-toolbar { display: flex; gap: 10px; margin-bottom: 16px; align-items: center; }
         .ext-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border-color); margin-bottom: 18px; }
@@ -319,6 +322,7 @@
             user-select: text; word-break: break-all;
         }
     </style>
+    <link rel="stylesheet" href="settings-polish.css">
 </head>
 <body>
 
@@ -340,7 +344,7 @@
         <a class="nav-item" data-section="shortcuts" href="#shortcuts">Keyboard Shortcuts <span class="nav-badge" id="badge-shortcuts" hidden></span></a>
         <a class="nav-item" data-section="passwords" href="#passwords">Passwords</a>
         <a class="nav-item" data-section="privacy" href="#privacy">Privacy &amp; Security</a>
-
+<a class="nav-item" data-section="permissions" href="#permissions">Site permissions</a>
         <div class="nav-group" id="nav-group-family">Family</div>
         <a class="nav-item" data-section="parental" href="#parental" id="nav-parental">Parental Controls <span class="nav-badge" id="badge-parental" hidden>ON</span></a>
 
@@ -688,7 +692,10 @@
                     <h3>Site permissions</h3>
                     <p id="perm-desc">Camera, microphone and notification choices you asked Neira to remember.</p>
                 </div>
-                <button class="btn btn-danger" id="perm-reset">Reset choices…</button>
+                <div class="actions">
+    <button class="btn" id="perm-manage">Manage…</button>
+    <button class="btn btn-danger" id="perm-reset">Reset choices…</button>
+</div>
             </div>
 
             <div class="setting-card">
@@ -699,7 +706,14 @@
                 <button class="btn btn-danger" id="pw-delete-all">Delete passwords…</button>
             </div>
         </section>
-
+<section class="page-section" id="permissions">
+    <h1 class="section-header">Site permissions</h1>
+    <p class="section-sub">Choices Neira remembered for sites. Location is always blocked.</p>
+    <div class="tools">
+        <input type="search" id="perm-search" placeholder="Search sites" autocomplete="off" spellcheck="false" aria-label="Search sites" />
+    </div>
+    <div id="perm-sites"></div>
+</section>
         <!-- PARENTAL CONTROLS -->
         <section class="page-section" id="parental">
             <h1 class="section-header">Parental Controls</h1>
@@ -896,7 +910,7 @@
             <h1 class="section-header">About Neira</h1>
             <div class="setting-card">
                 <div class="setting-info">
-                    <h3>Neira Browser v1.0.24</h3>
+                    <h3>Neira Browser v1.0.26</h3>
                     <p>A custom web browser built on Electron.</p>
                 </div>
             </div>

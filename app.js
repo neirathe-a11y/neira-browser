@@ -486,7 +486,14 @@
         };
 
         wv.addEventListener('did-start-loading', () => setLoading(true));
-        wv.addEventListener('did-stop-loading', () => setLoading(false));
+               wv.addEventListener('did-stop-loading', () => {
+            setLoading(false);
+            if (tab.titleEl.textContent === 'Loading…') {
+                tab.title = tab.isNewtab ? 'New Tab' : (tab.title || 'New Tab');
+                tab.titleEl.textContent = tab.title;
+                renderRail();
+            }
+        });
         wv.addEventListener('focus', () => { closeDropdown(false); closeTabSearch(false); });
 
 
@@ -507,6 +514,14 @@
             tab.favicon = (e.favicons && e.favicons[0]) || '';
             tab.fav.src = tab.favicon;
             tab.fav.hidden = tab.loading || !tab.favicon;
+            renderRail();
+        });
+                wv.addEventListener('page-title-updated', e => {
+            const t = (e.title || '').trim();
+            if (tab.isNewtab) tab.title = 'New Tab';
+            else tab.title = t || toDisplayUrl(tab.url) || 'New Tab';
+            tab.titleEl.textContent = tab.title;
+            if (tab.id === activeId) updateWindowTitle();
             renderRail();
         });
 

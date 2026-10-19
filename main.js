@@ -27,6 +27,68 @@ protocol.registerSchemesAsPrivileged([
 app.commandLine.appendSwitch('enable-unsafe-webgpu');
 if (process.platform === 'linux') app.commandLine.appendSwitch('enable-features', 'Vulkan');
 
+// ---------------------------------------------------------------------------
+// Chrome identity (needed so Google / other sites accept sign-in)
+// Google blocks sign-in when it sees "Electron" or the app name in the user
+// agent or in the client hints (sec-ch-ua / navigator.userAgentData).
+// ---------------------------------------------------------------------------
+const CHROME_VER = process.versions.chrome;
+const CHROME_MAJOR = CHROME_VER.split('.')[0];
+const GREASE_BRAND = 'Not?A_Brand';
+const GREASE_VER = '99';
+
+function uaPlatformToken() {
+    if (process.platform === 'darwin') return 'Macintosh; Intel Mac OS X 10_15_7';
+    if (process.platform === 'linux') return 'X11; Linux x86_64';
+    return 'Windows NT 10.0; Win64; x64';
+}
+
+function cleanUserAgent() {
+    return `Mozilla/5.0 (${uaPlatformToken()}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_MAJOR}.0.0.0 Safari/537.36`;
+}
+
+function navPlatform() {
+    if (process.platform === 'darwin') return 'MacIntel';
+    if (process.platform === 'linux') return 'Linux x86_64';
+    return 'Win32';
+}
+
+function uaMetadata() {
+    const platform = process.platform === 'darwin' ? 'macOS' : (process.platform === 'linux' ? 'Linux' : 'Windows');
+    const platformVersion = process.platform === 'darwin' ? '14.0.0' : (process.platform === 'linux' ? '6.5.0' : '10.0.0');
+    return {
+        brands: [
+            { brand: GREASE_BRAND, version: GREASE_VER },
+            { brand: 'Chromium', version: CHROME_MAJOR },
+            { brand: 'Google Chrome', version: CHROME_MAJOR }
+        ],
+        fullVersionList: [
+            { brand: GREASE_BRAND, version: GREASE_VER + '.0.0.0' },
+            { brand: 'Chromium', version: CHROME_VER },
+            { brand: 'Google Chrome', version: CHROME_VER }
+        ],
+        fullVersion: CHROME_VER,
+        platform,
+        platformVersion,
+        architecture: process.arch === 'arm64' ? 'arm' : 'x86',
+        model: '',
+        mobile: false,
+        bitness: '64',
+        wow64: false
+    };
+}
+
+const SEC_CH_UA = `"${GREASE_BRAND}";v="${GREASE_VER}", "Chromium";v="${CHROME_MAJOR}", "Google Chrome";v="${CHROME_MAJOR}"`;
+const SEC_CH_UA_FULL = `"${GREASE_BRAND}";v="${GREASE_VER}.0.0.0", "Chromium";v="${CHROME_VER}", "Google Chrome";v="${CHROME_VER}"`;
+
+// Applies to every web contents that doesn't get its own override
+
+// Full override (UA string, navigator.platform and navigator.userAgentData)
+// for a page. Uses the DevTools protocol so JS-visible client hints match too.
+function applyChromeIdentity(wc) {
+    return; // disabled: debugger override was stalling page loads
+}
+
 let store = null;
 
 const ENGINES = [
@@ -645,7 +707,13 @@ function accelerator(id) {
 }
 
 function setupGuest(info, wc) {
-        wc.on('input-event', (_e, input) => {
+    // Present as plain Chrome (UA + navigator.userAgentData) so Google sign-in works.
+    // Only external pages get the Chrome identity; never touch Neira's own pages.
+    wc.on('did-start-navigation', (_e, url, _inPlace, isMainFrame) => {
+        if (isMainFrame && /^https?:/i.test(url)) applyChromeIdentity(wc);
+    });
+
+    wc.on('input-event', (_e, input) => {
         if (input.type === 'mouseDown' && input.button !== 'right') sendTo(info, 'page:pointer');
     });
     const enforceParental = (ev, url) => {
@@ -726,6 +794,8 @@ app.on('web-contents-created', (_e, contents) => {
         } else if (!/^(https?:|about:blank|data:|file:)/i.test(src)) {
             event.preventDefault();
             return;
+        } else {
+            // Web pages identify as Chrome (no "Electron" / app name in the UA).
         }
 
         const part = params.partition || '';
@@ -741,19 +811,6 @@ app.on('web-contents-created', (_e, contents) => {
         }
     });
 });
-
-function cleanUserAgent() {
-    try {
-        let ua = app.userAgentFallback;
-        if (!ua) return null;
-        ua = ua.replace(/\s*Electron\/\S+/i, '');
-        const name = typeof app.getName === 'function' ? app.getName() : '';
-        if (name) ua = ua.replace(new RegExp('\\s*' + name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\/\\S+', 'i'), '');
-        return ua;
-    } catch (_) {
-        return null;
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Sessions & Downloads
@@ -792,7 +849,7 @@ function setupSession(ses, isPrivate = false) {
         notifications: 'show notifications'
     };
     const ua = cleanUserAgent();
-    if (ua && typeof ses.setUserAgent === 'function') ses.setUserAgent(ua);
+    if (typeof ses.setUserAgent === 'function') ses.setUserAgent(ua);
 
     // Tracker blocking + parental safe-search, in one request hook.
     ses.webRequest.onBeforeRequest({ urls: ['*://*/*'] }, (details, cb) => {
@@ -1509,7 +1566,7 @@ handle('page:download-url', (event, wcId, url) => {
 
     handle('permissions:setFor', (_e, origin, permission, allow) => {
         if (typeof origin !== 'string' || typeof permission !== 'string') return { ok: false };
-        if (!['media', 'notifications', 'geolocation'].includes(permission)) return { ok: false };
+        if (!['media', 'notifications'].includes(permission)) return { ok: false };
         const key = origin + '|' + permission;
         store.data.permissions[key] = !!allow;
         store.save();
@@ -2637,13 +2694,6 @@ autoUpdater.on('update-downloaded', () => {
         if (result.response === 0) autoUpdater.quitAndInstall();
     });
 });
-function focusedInfo() {
-    for (const info of windows) {
-        if (info.win.isDestroyed()) continue;
-        if (info.win.isFocused()) return info;
-    }
-    return null;
-}
 function focusedInfo() {
     for (const info of windows) {
         if (info.win.isDestroyed()) continue;

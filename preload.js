@@ -109,10 +109,19 @@ downloadURL: (wcId, url) => invoke('page:download-url', wcId, url),
         switch: id => invoke('profiles:switch', id),
         onChange: on('profiles:changed')
     },
-    permissions: {
-        list: () => invoke('permissions:list'),
-        clear: () => invoke('permissions:clear')
-    },
+  permissions: {
+    list: () => ipcRenderer.invoke('permissions:list'),
+    clear: () => ipcRenderer.invoke('permissions:clear'),
+    listDetailed: () => ipcRenderer.invoke('permissions:listDetailed'),
+    setFor: (o, p, a) => ipcRenderer.invoke('permissions:setFor', o, p, a),
+    removeFor: (o, p) => ipcRenderer.invoke('permissions:removeFor', o, p),
+    removeOrigin: o => ipcRenderer.invoke('permissions:removeOrigin', o),
+    onChanged: cb => {
+        const h = () => cb();
+        ipcRenderer.on('permissions:changed', h);
+        return () => ipcRenderer.removeListener('permissions:changed', h);
+    }
+},
     downloads: {
         get: () => invoke('downloads:get'),
         open: id => invoke('downloads:open', id),

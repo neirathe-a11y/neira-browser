@@ -40,6 +40,7 @@
         bookmarks: 'Bookmarks',
         downloads: 'Downloads',
         extensions: 'Extensions',
+        permissions: 'Site permissions',
                 sync: 'Sync',
         appearance: 'Appearance & Theme',
         ai: 'Local AI',
@@ -147,7 +148,7 @@
         try { sessionStorage.setItem('neira.section', id); } catch (_) {}
         content.scrollTop = 0;
         if (loaders[id]) {
-            if (id === 'parental') loaders[id]();
+            if (id === 'parental' || id === 'permissions') loaders[id]();
             else if (!loaded.has(id)) { loaded.add(id); loaders[id](); }
         }
         if (id === 'parental') refreshParentalBadge();
@@ -727,22 +728,88 @@
     // -----------------------------------------------------------------------
     // Permissions
     // -----------------------------------------------------------------------
-    async function renderPermissions() {
-        try {
-            const list = await api.permissions.list();
-            $('perm-desc').textContent = list.length
-                ? `${list.length} remembered choice${list.length === 1 ? '' : 's'}. Location is always blocked.`
-                : 'No remembered choices. Neira asks before a site uses your camera, microphone or notifications.';
-            $('perm-reset').disabled = !list.length;
-        } catch (_) {}
+    const PERM_LABELS = { media: '🎥 Camera & microphone', notifications: '🔔 Notifications' };
+
+async function renderPermissions() {
+    try {
+        const list = await api.permissions.list();
+        $('perm-desc').textContent = list.length
+            ? `${list.length} remembered choice${list.length === 1 ? '' : 's'}. Location is always blocked.`
+            : 'No remembered choices. Neira asks before a site uses your camera, microphone or notifications.';
+        $('perm-reset').disabled = !list.length;
+    } catch (_) {}
+}
+
+async function renderPermSites() {
+    const boxEl = $('perm-sites');
+    let rows;
+    try { rows = await api.permissions.listDetailed(); }
+    catch (_) { failure(boxEl, 'Could not load site permissions.', renderPermSites); return; }
+
+    const q = $('perm-search').value.trim().toLowerCase();
+    rows = rows.filter(r => !q || r.origin.toLowerCase().includes(q));
+    boxEl.replaceChildren();
+
+    if (!rows.length) {
+        const list = el('div', 'list');
+        list.appendChild(el('div', 'empty', q ? 'No matching sites.' : 'No remembered site permissions yet.'));
+        boxEl.appendChild(list);
+        return;
     }
-    loaders.privacy = renderPermissions;
-    $('perm-reset').addEventListener('click', async () => {
-        if (!await api.confirm('Forget all remembered site permission choices?')) return;
-        await api.permissions.clear();
-        renderPermissions();
-        toast('Site permissions reset');
-    });
+
+    for (const row of rows) {
+        const card = el('div', 'perm-site');
+        const head = el('div', 'perm-head');
+        head.appendChild(el('span', 'perm-origin', row.origin.replace(/^https?:\/\//, '')));
+        const rm = el('button', 'btn btn-small btn-danger', 'Remove site');
+        rm.addEventListener('click', async () => {
+            if (!await api.confirm(`Forget all remembered choices for ${row.origin}?`)) return;
+            await api.permissions.removeOrigin(row.origin);
+            toast('Site removed');
+        });
+        head.appendChild(rm);
+        card.appendChild(head);
+
+        for (const p of row.perms) {
+            const line = el('div', 'perm-row');
+            const label = PERM_LABELS[p.permission] || p.permission;
+            line.appendChild(el('span', '', label));
+
+            const sel = document.createElement('select');
+            sel.setAttribute('aria-label', `${label} for ${row.origin}`);
+            for (const [v, t] of [['allow', 'Allow'], ['block', 'Block'], ['ask', 'Ask every time']]) {
+                const o = document.createElement('option');
+                o.value = v;
+                o.textContent = t;
+                sel.appendChild(o);
+            }
+            sel.value = p.allow ? 'allow' : 'block';
+            sel.addEventListener('change', async () => {
+                if (sel.value === 'ask') await api.permissions.removeFor(row.origin, p.permission);
+                else await api.permissions.setFor(row.origin, p.permission, sel.value === 'allow');
+                toast(sel.value === 'ask' ? 'Will ask next time' : `${label}: ${sel.value}`);
+            });
+            line.appendChild(sel);
+            card.appendChild(line);
+        }
+        boxEl.appendChild(card);
+    }
+}
+
+loaders.privacy = renderPermissions;
+loaders.permissions = renderPermSites;
+
+$('perm-search').addEventListener('input', renderPermSites);
+$('perm-manage').addEventListener('click', () => { location.hash = '#permissions'; });
+$('perm-reset').addEventListener('click', async () => {
+    if (!await api.confirm('Forget all remembered site permission choices?')) return;
+    await api.permissions.clear();
+    toast('Site permissions reset');
+});
+api.permissions.onChanged(() => {
+    renderPermissions();
+    if (currentSection === 'permissions') renderPermSites();
+});
 
     // -----------------------------------------------------------------------
     // Passwords
@@ -796,12 +863,18 @@
         $('pw-add').addEventListener('click', () => { modal.classList.add('active'); $('pw-site').focus(); });
         $('pw-cancel').addEventListener('click', close);
         modal.addEventListener('mousedown', e => { if (e.target === modal) close(); });
-        modal.addEventListener('keydown', e => { if (e.key === 'Escape') close(); if (e.key === 'Enter') $('pw-save').click(); });
-        $('pw-save').addEventListener('click', async () => {
-            const r = await api.passwords.add({ site: $('pw-site').value, user: $('pw-user').value, pass: $('pw-pass').value });
-            if (!r.ok) { $('pw-error').textContent = 'Fill in the website, username and password.'; return; }
+     modal.addEventListener('keydown', e => { if (e.key === 'Escape') close(); if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') $('pw-save').click(); });
+               $('pw-save').addEventListener('click', async () => {
+            const site = $('pw-site').value.trim();
+            const user = $('pw-user').value.trim();
+            const pass = $('pw-pass').value;
+            if (!site || !user || !pass) { $('pw-error').textContent = 'Fill in the website, username and password.'; return; }
+            let r;
+            try { r = await api.passwords.add({ site, user, pass }); }
+            catch (err) { $('pw-error').textContent = 'Could not save: ' + (err && err.message ? err.message : 'unknown error'); return; }
+            if (!r || !r.ok) { $('pw-error').textContent = (r && r.reason) || 'Neira could not save this password.'; return; }
             close();
-            renderPasswords();
+            await renderPasswords();
             toast('Password saved');
         });
         $('pw-import').addEventListener('click', async () => {
