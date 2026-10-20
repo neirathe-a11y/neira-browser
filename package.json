@@ -26,8 +26,7 @@
     "nsis": {
       "oneClick": false,
       "perMachine": false,
-      "allowToChangeInstallationDirectory": true,
-      "include": "build/installer.nsh"
+      "allowToChangeInstallationDirectory": true
     },
     "win": {
       "target": [
