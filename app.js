@@ -486,6 +486,10 @@
         };
 
         wv.addEventListener('did-start-loading', () => setLoading(true));
+                wv.addEventListener('new-window', e => {
+            e.preventDefault();
+            createTab(e.url, { activate: false });
+        });
                wv.addEventListener('did-stop-loading', () => {
             setLoading(false);
             if (tab.titleEl.textContent === 'Loading…') {
@@ -4132,10 +4136,42 @@ try {
         const fn = ACTIONS[id];
         if (fn) fn();
     }
+    const CTX_SHADOWS = {
+        none: 'none',
+        soft: '0 4px 14px rgba(0,0,0,.25)',
+        medium: '0 14px 40px rgba(0,0,0,.55)',
+        strong: '0 20px 60px rgba(0,0,0,.8)'
+    };
 
-    function applyUi() {
+    function applyContextMenuStyle() {
+        const c = settings.contextMenu || {};
+        const r = root.style;
+        const set = (name, val) => {
+            if (val === undefined || val === null || val === '') r.removeProperty(name);
+            else r.setProperty(name, val);
+        };
+        set('--ctx-bg', c.bg);
+        set('--ctx-text', c.text);
+        set('--ctx-muted', c.text ? `color-mix(in srgb, ${c.text} 55%, transparent)` : '');
+        set('--ctx-border', c.border);
+        set('--ctx-hover', c.hover);
+        set('--ctx-opacity', c.opacity !== undefined ? c.opacity + '%' : '');
+        set('--ctx-radius', c.radius !== undefined ? c.radius + 'px' : '');
+        set('--ctx-font-size', c.fontSize !== undefined ? c.fontSize + 'px' : '');
+        set('--ctx-pad', c.padding !== undefined ? c.padding + 'px' : '');
+        set('--ctx-blur', c.blur !== undefined ? c.blur + 'px' : '');
+        set('--ctx-min-width', c.minWidth !== undefined ? c.minWidth + 'px' : '');
+        set('--ctx-shadow', c.shadow ? CTX_SHADOWS[c.shadow] : '');
+        for (const m of [pageCtx, tabCtx, railCtx]) {
+            if (!m) continue;
+            m.classList.toggle('hide-hints', c.showShortcuts === false);
+            m.classList.toggle('no-anim', c.animate === false);
+        }
+    }
+        function applyUi() {
         window.neiraTheme.apply(settings);
         window.neiraTheme.persist(settings);
+        applyContextMenuStyle();
     }
 
     const HINTS = {

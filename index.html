@@ -1761,64 +1761,66 @@
         .drag-spacer { display: none; }
         :root.vertical-tabs .toolbar { padding-right: 150px; }
 
-        /* ==================== Tab context menu ==================== */
-        .ctx-menu {
-            position: fixed;
-            z-index: 90;
-            min-width: 220px;
-            background: var(--bg-toolbar);
-            border: 1px solid var(--border-color);
-            border-radius: 10px;
-            padding: 6px;
-            box-shadow: 0 14px 40px rgba(0, 0, 0, 0.55);
-            animation: ctxIn 0.12s ease-out both;
-            max-height: 80vh;
-            overflow-y: auto;
-        }
-        @keyframes ctxIn {
-            from { opacity: 0; transform: translateY(-4px) scale(0.98); }
-            to { opacity: 1; transform: none; }
-        }
-        .ctx-item {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 20px;
-            width: 100%;
-            background: transparent;
-            border: none;
-            color: var(--text-main);
-            font-size: 13px;
-            padding: 7px 10px;
-            border-radius: 6px;
-            cursor: pointer;
-            text-align: left;
-        }
-        .ctx-item:hover:not(:disabled),
-        .ctx-item:focus-visible {
-            background: var(--bg-tab-active);
-            outline: none;
-        }
-        .ctx-item:disabled { opacity: 0.35; cursor: default; }
-        .ctx-item .ctx-hint {
-            color: var(--text-muted);
-            font-size: 11px;
-            font-family: ui-monospace, Menlo, Consolas, monospace;
-            flex: none;
-        }
-        .ctx-item .ctx-check {
-            color: var(--accent);
-            font-weight: 700;
-            flex: none;
-        }
-        .ctx-sep { height: 1px; background: var(--border-color); margin: 5px 4px; }
-        .ctx-header {
-            padding: 6px 10px 8px;
-            font-size: 11px;
-            text-transform: uppercase;
-            letter-spacing: 0.07em;
-            color: var(--text-muted);
-        }
+        /* ==================== Context menus (customisable) ==================== */
+.ctx-menu {
+    position: fixed;
+    z-index: 90;
+    min-width: var(--ctx-min-width, 220px);
+    background: color-mix(in srgb, var(--ctx-bg, var(--bg-toolbar)) var(--ctx-opacity, 100%), transparent);
+    color: var(--ctx-text, var(--text-main));
+    border: 1px solid var(--ctx-border, var(--border-color));
+    border-radius: var(--ctx-radius, 10px);
+    padding: 6px;
+    box-shadow: var(--ctx-shadow, 0 14px 40px rgba(0, 0, 0, 0.55));
+    backdrop-filter: blur(var(--ctx-blur, 0px));
+    -webkit-backdrop-filter: blur(var(--ctx-blur, 0px));
+    font-size: var(--ctx-font-size, 13px);
+    animation: ctxIn 0.12s ease-out both;
+    max-height: 80vh;
+    overflow-y: auto;
+}
+.ctx-menu.no-anim { animation: none; }
+.ctx-menu.hide-hints .ctx-hint { display: none; }
+@keyframes ctxIn {
+    from { opacity: 0; transform: translateY(-4px) scale(0.98); }
+    to { opacity: 1; transform: none; }
+}
+.ctx-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    width: 100%;
+    background: transparent;
+    border: none;
+    color: var(--ctx-text, var(--text-main));
+    font-size: inherit;
+    padding: var(--ctx-pad, 7px) 10px;
+    border-radius: calc(var(--ctx-radius, 10px) - 4px);
+    cursor: pointer;
+    text-align: left;
+}
+.ctx-item:hover:not(:disabled),
+.ctx-item:focus-visible {
+    background: var(--ctx-hover, var(--bg-tab-active));
+    outline: none;
+}
+.ctx-item:disabled { opacity: 0.35; cursor: default; }
+.ctx-item .ctx-hint {
+    color: var(--ctx-muted, var(--text-muted));
+    font-size: 0.85em;
+    font-family: ui-monospace, Menlo, Consolas, monospace;
+    flex: none;
+}
+.ctx-item .ctx-check { color: var(--accent); font-weight: 700; flex: none; }
+.ctx-sep { height: 1px; background: var(--ctx-border, var(--border-color)); margin: 5px 4px; }
+.ctx-header {
+    padding: 6px 10px 8px;
+    font-size: 0.85em;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--ctx-muted, var(--text-muted));
+}
 
         /* ==================== Group chooser popover ==================== */
         .group-pop {

@@ -1,6 +1,6 @@
 {
   "name": "neira-browser",
-  "version": "1.0.26",
+  "version": "1.0.27",
   "description": "A custom desktop browser",
   "author": "Neira",
   "main": "main.js",
@@ -10,18 +10,24 @@
   },
   "dependencies": {
     "@aptabase/electron": "^0.3.1",
-    "better-sqlite3": "^13.0.3",
-    "electron-updater": "^6.1.7"
+    "electron-updater": "^6.1.7",
+    "better-sqlite3": "^13.0.0"
   },
   "devDependencies": {
     "electron": "^44.0.0",
     "electron-builder": "^24.9.0"
   },
-  "build": {
+    "build": {
     "appId": "com.neira.browser",
     "productName": "Neira",
     "directories": {
       "output": "dist"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "include": "build/installer.nsh"
     },
     "win": {
       "target": [
@@ -33,7 +39,29 @@
       "target": [
         "dmg"
       ],
-      "artifactName": "Neira-Installer.dmg"
+      "artifactName": "Neira-Installer.dmg",
+      "extendInfo": {
+        "CFBundleURLTypes": [
+          {
+            "CFBundleURLName": "Web site URL",
+            "CFBundleURLSchemes": [
+              "http",
+              "https"
+            ]
+          }
+        ]
+      }
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "mimeTypes": [
+        "x-scheme-handler/http",
+        "x-scheme-handler/https",
+        "text/html",
+        "application/pdf"
+      ]
     },
     "publish": [
       {
@@ -43,8 +71,8 @@
       }
     ]
   },
-  "allowScripts": {
-    "0": "electron",
-    "better-sqlite3@12.11.1": true
-  }
+  "allowScripts": [
+    "electron",
+    "better-sqlite3"
+  ]
 }

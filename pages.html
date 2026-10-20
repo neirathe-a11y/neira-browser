@@ -247,10 +247,12 @@
         .modal-card h3 { font-size: 16px; }
         .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 4px; }
         .form-error { color: var(--danger); font-size: 13px; min-height: 16px; }
-.perm-site { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
-.perm-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: var(--row-pad); background: var(--accent-soft); }
-.perm-origin { font-size: 14px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.perm-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: var(--row-pad); border-top: 1px solid var(--card-border); }
+        
+        .perm-site { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
+        .perm-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: var(--row-pad); background: var(--accent-soft); }
+        .perm-origin { font-size: 14px; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .perm-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: var(--row-pad); border-top: 1px solid var(--card-border); }
+
         /* ---------- Extensions ---------- */
         .ext-toolbar { display: flex; gap: 10px; margin-bottom: 16px; align-items: center; }
         .ext-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border-color); margin-bottom: 18px; }
@@ -259,17 +261,10 @@
             padding: 10px 14px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
         }
         .ext-tab:hover { color: var(--text-primary); }
-
         .ext-empty { text-align: center; padding: 48px 20px 24px; color: var(--text-secondary); }
         .ext-empty-art { font-size: 48px; opacity: 0.6; margin-bottom: 12px; }
-               .ext-tab.active {
-            color: color-mix(in srgb, var(--accent) 55%, var(--text-primary));
-            border-bottom-color: var(--accent);
-        }
-        .ext-empty a {
-            color: color-mix(in srgb, var(--accent) 55%, var(--text-primary));
-            text-decoration: none;
-        }
+        .ext-tab.active { color: color-mix(in srgb, var(--accent) 55%, var(--text-primary)); border-bottom-color: var(--accent); }
+        .ext-empty a { color: color-mix(in srgb, var(--accent) 55%, var(--text-primary)); text-decoration: none; }
         .ext-empty a:hover { text-decoration: underline; }
         .ext-hint { margin-top: 16px; padding: 10px 14px; font-size: 12px; color: var(--text-secondary); background: var(--accent-soft); border-radius: 10px; line-height: 1.5; }
         .ext-card { background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 12px; padding: 16px; margin-bottom: 12px; display: flex; gap: 14px; align-items: flex-start; }
@@ -321,6 +316,20 @@
             background: var(--input-bg); padding: 2px 7px; border-radius: 6px; color: var(--accent);
             user-select: text; word-break: break-all;
         }
+        .cm-section, #cm-section { width: 100%; }
+        .cm-presets { display: flex; flex-wrap: wrap; gap: 8px; width: 100%; }
+        .cm-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px 24px; width: 100%; }
+        .cm-grid label { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px; color: var(--text-secondary); }
+        .cm-grid input[type="color"] { width: 38px; height: 26px; padding: 0; border: 1px solid var(--border-color); border-radius: 6px; background: none; cursor: pointer; }
+        .cm-grid input[type="range"] { width: 120px; accent-color: var(--accent); }
+        .cm-stage { width: 100%; padding: 24px; border-radius: 12px; background: var(--bg-main); border: 1px solid var(--card-border); display: flex; justify-content: center; }
+        .cm-preview { width: var(--w, 220px); padding: 6px; background: color-mix(in srgb, var(--bg) var(--op), transparent); color: var(--tx); border: 1px solid var(--bd); border-radius: var(--r); box-shadow: var(--sh); backdrop-filter: blur(var(--bl)); font-size: var(--fs); }
+        .cm-item { display: flex; justify-content: space-between; gap: 20px; padding: var(--pd) 10px; border-radius: calc(var(--r) - 4px); }
+        .cm-item small { color: color-mix(in srgb, var(--tx) 55%, transparent); font-family: ui-monospace, Consolas, monospace; font-size: .85em; }
+        .cm-item.hov { background: var(--hv); }
+        .cm-item.dim { opacity: .35; }
+        .cm-preview.nohints small { display: none; }
+        .cm-sep { height: 1px; background: var(--bd); margin: 5px 4px; }
     </style>
     <link rel="stylesheet" href="settings-polish.css">
 </head>
@@ -334,8 +343,7 @@
         <a class="nav-item" data-section="bookmarks" href="#bookmarks">Bookmarks <span class="nav-badge" id="badge-bookmarks" hidden></span></a>
         <a class="nav-item" data-section="downloads" href="#downloads">Downloads <span class="nav-badge" id="badge-downloads" hidden></span></a>
         <a class="nav-item" data-section="extensions" href="#extensions">Extensions</a>
-                <a class="nav-item" data-section="sync" href="#sync">Sync</a>
-        
+        <a class="nav-item" data-section="sync" href="#sync">Sync</a>
 
         <div class="nav-group">Settings</div>
         <a class="nav-item" data-section="appearance" href="#appearance">Appearance &amp; Theme</a>
@@ -344,7 +352,8 @@
         <a class="nav-item" data-section="shortcuts" href="#shortcuts">Keyboard Shortcuts <span class="nav-badge" id="badge-shortcuts" hidden></span></a>
         <a class="nav-item" data-section="passwords" href="#passwords">Passwords</a>
         <a class="nav-item" data-section="privacy" href="#privacy">Privacy &amp; Security</a>
-<a class="nav-item" data-section="permissions" href="#permissions">Site permissions</a>
+        <a class="nav-item" data-section="permissions" href="#permissions">Site permissions</a>
+        
         <div class="nav-group" id="nav-group-family">Family</div>
         <a class="nav-item" data-section="parental" href="#parental" id="nav-parental">Parental Controls <span class="nav-badge" id="badge-parental" hidden>ON</span></a>
 
@@ -527,6 +536,55 @@
                 </div>
                 <label class="switch"><input type="checkbox" id="bookmarks-bar" aria-label="Show bookmarks bar"><span class="slider"></span></label>
             </div>
+
+            <h2 class="sub-header">Right-click menu</h2>
+            <p class="section-sub">Customize how the right-click menus look. Changes apply instantly.</p>
+
+            <div class="setting-card stack" id="cm-section">
+                <div class="cm-presets">
+                    <button class="btn btn-small" data-preset="indigo">Indigo</button>
+                    <button class="btn btn-small" data-preset="midnight">Midnight</button>
+                    <button class="btn btn-small" data-preset="neon">Neon</button>
+                    <button class="btn btn-small" data-preset="light">Light</button>
+                    <button class="btn btn-small" data-preset="glass">Glass</button>
+                    <button class="btn btn-small btn-danger" data-preset="reset">Reset</button>
+                </div>
+
+                <div class="cm-grid">
+                    <label>Background <input type="color" data-k="bg" value="#1c1c3a"></label>
+                    <label>Text <input type="color" data-k="text" value="#ffffff"></label>
+                    <label>Border <input type="color" data-k="border" value="#1f5f7a"></label>
+                    <label>Hover <input type="color" data-k="hover" value="#2a2a55"></label>
+                    <label>Opacity <input type="range" data-k="opacity" min="40" max="100" value="100"></label>
+                    <label>Corner radius <input type="range" data-k="radius" min="0" max="24" value="10"></label>
+                    <label>Font size <input type="range" data-k="fontSize" min="11" max="18" value="13"></label>
+                    <label>Item spacing <input type="range" data-k="padding" min="3" max="14" value="7"></label>
+                    <label>Blur <input type="range" data-k="blur" min="0" max="24" value="0"></label>
+                    <label>Width <input type="range" data-k="minWidth" min="180" max="320" value="220"></label>
+                    <label>Shadow
+                        <select data-k="shadow">
+                            <option value="none">None</option>
+                            <option value="soft">Soft</option>
+                            <option value="medium" selected>Medium</option>
+                            <option value="strong">Strong</option>
+                        </select>
+                    </label>
+                    <label>Shortcut hints <span class="switch"><input type="checkbox" data-k="showShortcuts" checked><span class="slider"></span></span></label>
+                    <label>Open animation <span class="switch"><input type="checkbox" data-k="animate" checked><span class="slider"></span></span></label>
+                </div>
+
+                <div class="cm-stage">
+                    <div class="cm-preview" id="cm-preview">
+                        <div class="cm-item dim"><span>Back</span><small>Alt+Left</small></div>
+                        <div class="cm-item hov"><span>Reload</span><small>Ctrl+R</small></div>
+                        <div class="cm-sep"></div>
+                        <div class="cm-item"><span>Save as…</span><small>Ctrl+S</small></div>
+                        <div class="cm-item"><span>Print…</span><small>Ctrl+P</small></div>
+                        <div class="cm-sep"></div>
+                        <div class="cm-item"><span>Inspect</span></div>
+                    </div>
+                </div>
+            </div>
         </section>
 
         <!-- LOCAL AI -->
@@ -693,9 +751,9 @@
                     <p id="perm-desc">Camera, microphone and notification choices you asked Neira to remember.</p>
                 </div>
                 <div class="actions">
-    <button class="btn" id="perm-manage">Manage…</button>
-    <button class="btn btn-danger" id="perm-reset">Reset choices…</button>
-</div>
+                    <button class="btn" id="perm-manage">Manage…</button>
+                    <button class="btn btn-danger" id="perm-reset">Reset choices…</button>
+                </div>
             </div>
 
             <div class="setting-card">
@@ -706,14 +764,16 @@
                 <button class="btn btn-danger" id="pw-delete-all">Delete passwords…</button>
             </div>
         </section>
-<section class="page-section" id="permissions">
-    <h1 class="section-header">Site permissions</h1>
-    <p class="section-sub">Choices Neira remembered for sites. Location is always blocked.</p>
-    <div class="tools">
-        <input type="search" id="perm-search" placeholder="Search sites" autocomplete="off" spellcheck="false" aria-label="Search sites" />
-    </div>
-    <div id="perm-sites"></div>
-</section>
+        
+        <section class="page-section" id="permissions">
+            <h1 class="section-header">Site permissions</h1>
+            <p class="section-sub">Choices Neira remembered for sites. Location is always blocked.</p>
+            <div class="tools">
+                <input type="search" id="perm-search" placeholder="Search sites" autocomplete="off" spellcheck="false" aria-label="Search sites" />
+            </div>
+            <div id="perm-sites"></div>
+        </section>
+
         <!-- PARENTAL CONTROLS -->
         <section class="page-section" id="parental">
             <h1 class="section-header">Parental Controls</h1>
@@ -807,7 +867,7 @@
             </div>
 
             <!-- Unlocked dashboard -->
-                        <div id="pc-dashboard" hidden>
+            <div id="pc-dashboard" hidden>
                 <div id="pc-state-banner"></div>
                 <div class="setting-card">
                     <div class="setting-info">
@@ -816,7 +876,6 @@
                     </div>
                     <button class="btn btn-danger" id="pc-disable">Turn off…</button>
                 </div>
-                <!-- ...rest unchanged... -->
 
                 <h2 class="sub-header">Security</h2>
                 <div class="setting-card">
@@ -965,8 +1024,7 @@
         </div>
     </div>
 
-    </script>
     <script src="pages.js"></script>
-  
+    <script src="ctx-settings.js"></script>
 </body>
 </html>

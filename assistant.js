@@ -4,6 +4,8 @@
 //  - analyze()      turns that into a written overview (what the page is, what is on it, key takeaways)
 //  - answer()       finds the sentences on the page that answer a question
 //  - parseMarkdown  renders replies from the optional AI mode
+//  - createOllamaClient / analyzeWithAI / answerWithAI / summarizeSelectionWithAI
+//                   optional AI mode: streams from a local Ollama server (http://localhost:11434 by default)
 // The output is a list of "blocks" that app.js draws as chat messages.
 (function (root) {
     const STOP = new Set(('a about above after again all also am an and any are as at be because been before being below between both but by ' +
@@ -590,30 +592,592 @@
         }).join('\n\n');
     }
 
-    // Plain text handed to the AI model: title, description, headings and paragraphs (and the controls, for app-like pages)
-    function pageContext(d) {
+    // ------------------------------------------------------------------
+    // Page context for the AI model (plain text, trimmed to a character budget)
+    // ------------------------------------------------------------------
+    const CONTEXT_DEFAULT_CHARS = 12000;
+    const TRIM_NOTE = '[Note: this page was long, so some paragraphs were left out.]';
+
+    // Lower-case, punctuation-free key used to spot duplicate paragraphs and to locate a selection.
+    const textKey = s => clean(s).toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim();
+
+    // Drops paragraphs that already appeared earlier on the page (menus, repeated captions, cards...).
+    function dedupeSections(sections) {
+        const seen = new Set();
         const out = [];
-        out.push('Title: ' + d.title);
-        out.push('URL: ' + d.url);
-        if (d.description) out.push('Description: ' + d.description);
-        if (d.author) out.push('Author: ' + d.author);
-        if (d.published) out.push('Published: ' + d.published);
-        const words = wordCount(d);
-        if (words < 200) {
-            if (d.inputs.length) out.push('Inputs: ' + d.inputs.join('; '));
-            if (d.navLinks.length) out.push('Navigation: ' + d.navLinks.join('; '));
-            if (d.asideItems.length) out.push('Sidebar: ' + d.asideItems.join('; '));
-            if (d.buttons.length) out.push('Buttons: ' + d.buttons.join('; '));
+        for (const s of sections) {
+            const paras = [];
+            for (const p of s.paras) {
+                const k = textKey(p);
+                if (!k || seen.has(k)) continue;
+                seen.add(k);
+                paras.push(p);
+            }
+            if (s.heading || paras.length) out.push({ heading: s.heading, level: s.level, paras });
         }
-        out.push('');
-        for (const s of d.sections) {
-            if (s.heading) out.push('\n' + '#'.repeat(Math.max(1, Math.min(4, s.level))) + ' ' + s.heading);
-            for (const p of s.paras) out.push(p);
-        }
-        return out.join('\n').slice(0, 40000);
+        return out;
     }
 
-    const api = { pageContext, collectPage, classify, analyze, summarizeSelection, answer, parseMarkdown, inlineParts, blocksToText, splitSentences, pickTop, trim, wordCount };
+    // Which section (and paragraph) holds the selected text? { i: -1 } when nothing matches.
+    function nearestSection(secs, selection) {
+        const none = { i: -1, p: -1 };
+        const sel = clean(selection);
+        if (!sel) return none;
+        const selKey = textKey(sel);
+        const probes = [selKey.slice(0, 60)];
+        if (selKey.length > 120) probes.push(selKey.slice(-60));
+        if (probes.some(x => x.length >= 12)) {
+            for (let i = 0; i < secs.length; i++) {
+                for (let p = 0; p < secs[i].paras.length; p++) {
+                    const k = textKey(secs[i].paras[p]);
+                    if (probes.some(x => x.length >= 12 && k.includes(x))) return { i, p };
+                }
+            }
+        }
+        // Fallback: the section that shares the most vocabulary with the selection
+        const st = new Set(tokens(sel));
+        if (!st.size) return none;
+        let best = none;
+        let bestScore = 0;
+        secs.forEach((sec, i) => {
+            const hit = new Set();
+            for (const t of tokens(sec.heading + ' ' + sec.paras.join(' '))) if (st.has(t)) hit.add(t);
+            const score = hit.size / st.size;
+            if (score > bestScore) { bestScore = score; best = { i, p: -1 }; }
+        });
+        return bestScore >= 0.3 ? best : none;
+    }
+
+    // Builds the context string and reports how much was trimmed.
+    // Options: maxChars (default 12000), selection (selected text), question (to find matching headings).
+    function buildContext(d, o) {
+        o = o || {};
+        const maxChars = Math.max(500, Math.floor(Number(o.maxChars)) || CONTEXT_DEFAULT_CHARS);
+        const selection = clean(o.selection);
+        const question = clean(o.question);
+
+        // Always kept: title, URL, description, author, date (+ controls on app-like pages, + the selection)
+        const head = [];
+        head.push('Title: ' + d.title);
+        head.push('URL: ' + d.url);
+        if (d.description) head.push('Description: ' + trim(d.description, 800));
+        if (d.author) head.push('Author: ' + d.author);
+        if (d.published) head.push('Published: ' + d.published);
+        if (wordCount(d) < 200) {
+            if (d.inputs.length) head.push('Inputs: ' + d.inputs.join('; '));
+            if (d.navLinks.length) head.push('Navigation: ' + d.navLinks.join('; '));
+            if (d.asideItems.length) head.push('Sidebar: ' + d.asideItems.join('; '));
+            if (d.buttons.length) head.push('Buttons: ' + d.buttons.join('; '));
+        }
+        if (selection) head.push('Selected text: ' + trim(selection, 3000));
+
+        const secs = dedupeSections(d.sections || []);
+        const items = secs.map(s => ({
+            s,
+            // every heading is always kept, so the main headings survive any trimming
+            line: s.heading ? '\n' + '#'.repeat(Math.max(1, Math.min(4, s.level))) + ' ' + s.heading : '',
+            paras: s.paras.map(t => ({ t, text: t, on: false }))
+        }));
+        const assemble = note => {
+            const out = head.slice();
+            if (note) out.push(note);
+            out.push('');
+            for (const it of items) {
+                if (it.line) out.push(it.line);
+                for (const p of it.paras) if (p.on) out.push(p.text);
+            }
+            return out.join('\n');
+        };
+
+        // Everything (de-duplicated) fits: send it all
+        items.forEach(it => it.paras.forEach(p => { p.on = true; }));
+        const full = assemble('');
+        const originalChars = full.length;
+        if (originalChars <= maxChars) return { context: full, originalChars, sentChars: originalChars, truncated: false };
+        items.forEach(it => it.paras.forEach(p => { p.on = false; }));
+
+        // Too long. Step 1: the first paragraph of every section is always kept (shortened only if even that cannot fit).
+        const firsts = items.filter(it => it.paras.length);
+        const base = assemble(TRIM_NOTE).length;
+        // The selection's own section gets up to 30% of the budget before the other first paragraphs are shortened.
+        const hit = selection ? nearestSection(secs, selection) : { i: -1, p: -1 };
+        let reserve = 0;
+        if (hit.i >= 0) {
+            const wanted = items[hit.i].paras.slice(1).reduce((a, p) => a + p.t.length + 1, 0);
+            reserve = Math.min(wanted, Math.floor(maxChars * 0.3));
+        }
+        let cap = 1500;
+        for (const c of [1500, 600, 300, 160, 80]) {
+            cap = c;
+            const need = firsts.reduce((a, it) => a + Math.min(it.paras[0].t.length, c + 1) + 1, 0);
+            if (base + need + reserve <= maxChars) break;
+        }
+        let used = base;
+        for (const it of firsts) {
+            const p = it.paras[0];
+            p.text = p.t.length > cap ? trim(p.t, cap) : p.t;
+            p.on = true;
+            used += p.text.length + 1;
+        }
+
+        const room = () => maxChars - used;
+        const inOrder = it => it.paras.map((_, k) => k);
+        const addFrom = (it, order, limit) => {
+            let spent = 0;
+            for (const k of order) {
+                const p = it.paras[k];
+                if (!p || p.on) continue;
+                const cost = p.text.length + 1;
+                if (cost > room() || spent + cost > limit) continue;
+                p.on = true;
+                used += cost;
+                spent += cost;
+            }
+            return spent;
+        };
+
+        // Step 2: fill the remaining space by priority.
+        // (1+2) The selection's own section, nearest paragraphs first
+        if (hit.i >= 0) {
+            const it = items[hit.i];
+            const centre = Math.max(0, hit.p);
+            addFrom(it, inOrder(it).sort((a, b) => Math.abs(a - centre) - Math.abs(b - centre)), Infinity);
+            const hp = it.paras[centre];
+            if (hp && hp.on && hp.text !== hp.t && hp.t.length - hp.text.length <= room()) { used += hp.t.length - hp.text.length; hp.text = hp.t; }
+        }
+        // (3) The beginning of the page (limited to 40% of what is left, so later priorities still get room)
+        let left = Math.floor(room() * 0.4);
+        for (const it of items) {
+            if (left <= 0) break;
+            left -= addFrom(it, inOrder(it), left);
+        }
+        // (4) Sections whose heading matches the question
+        const qt = new Set(tokens(question));
+        if (qt.size) for (const it of items) if (it.s.heading && tokens(it.s.heading).some(t => qt.has(t))) addFrom(it, inOrder(it), Infinity);
+        // (5) Anything else, in reading order
+        for (const it of items) addFrom(it, inOrder(it), Infinity);
+
+        let context = assemble(TRIM_NOTE);
+        if (context.length > maxChars) context = context.slice(0, maxChars - 1) + '…'; // safety net
+        return { context, originalChars, sentChars: context.length, truncated: true };
+    }
+
+    // pageContext(d)                       -> string, up to 12000 characters (same return type as before)
+    // pageContext(d, 8000)                 -> string, up to 8000 characters
+    // pageContext(d, 8000, { selection, question, meta: true })  -> { context, originalChars, sentChars, truncated }
+    // pageContext(d, { maxChars, selection, question, meta })    -> same, options in one object
+    function pageContext(d, maxChars, opts) {
+        if (maxChars && typeof maxChars === 'object') { opts = maxChars; maxChars = opts.maxChars; }
+        const o = Object.assign({}, opts, { maxChars: maxChars === undefined ? CONTEXT_DEFAULT_CHARS : maxChars });
+        const r = buildContext(d, o);
+        return o.meta ? r : r.context;
+    }
+
+    // A short excerpt around the selection (used next to the selected text in AI prompts).
+    function selectionExcerpt(d, selection, maxChars) {
+        const lines = ['Title: ' + d.title, 'URL: ' + d.url];
+        const secs = dedupeSections(d.sections || []);
+        const hit = nearestSection(secs, selection);
+        if (hit.i >= 0) {
+            const sec = secs[hit.i];
+            if (sec.heading) lines.push('Section: ' + sec.heading);
+            const selKey = textKey(selection);
+            let used = lines.join('\n').length;
+            const centre = Math.max(0, hit.p);
+            const order = sec.paras.map((_, k) => k).sort((a, b) => Math.abs(a - centre) - Math.abs(b - centre));
+            const keep = new Map();
+            for (const k of order) {
+                const key = textKey(sec.paras[k]);
+                if (key && selKey.includes(key)) continue; // already inside the selection
+                const text = sec.paras[k].length > 700 ? trim(sec.paras[k], 700) : sec.paras[k];
+                if (used + text.length + 1 > maxChars) continue;
+                keep.set(k, text);
+                used += text.length + 1;
+            }
+            for (const k of [...keep.keys()].sort((a, b) => a - b)) lines.push(keep.get(k));
+        }
+        return lines.join('\n');
+    }
+
+    // ------------------------------------------------------------------
+    // Optional AI mode: a local Ollama server (nothing leaves the device)
+    // ------------------------------------------------------------------
+    const OLLAMA_DEFAULTS = Object.freeze({
+        baseUrl: 'http://localhost:11434',
+        model: 'qwen3:8b-q4_K_M',
+        num_ctx: 16384,
+        temperature: 0.2,
+        num_predict: 1024,
+        think: false,       // Qwen3: skip the long "thinking" phase (sent to Ollama as `think`)
+        stripThink: true    // also remove any <think>…</think> that older Ollama versions put in the text
+    });
+
+    const SYSTEM_PROMPT = [
+        'You are Neira, a private local browsing assistant. You receive text extracted from the user’s current webpage or selected text.',
+        '',
+        'Rules:',
+        '- Answer primarily from the provided page context.',
+        '- If the answer is not in the context, say so briefly instead of guessing.',
+        '- Do not invent facts, quotes, citations, prices, dates, or page content.',
+        '- Be concise and well formatted.',
+        '- Use Markdown: short paragraphs, bullet points, headings only when useful, and code blocks for code.',
+        '- For math, show the essential steps and clearly label the final answer.',
+        '- If units are present, preserve and convert them correctly.',
+        '- If the question is ambiguous, state your assumption briefly before answering.'
+    ].join('\n');
+
+    // Errors from the AI mode carry a machine-readable `code`:
+    //   'not_running' | 'cors' | 'model_not_found' | 'aborted' | 'http_error' | 'stream_error' |
+    //   'network' | 'empty_response' | 'bad_request' | 'unsupported'
+    // `err.partial` holds any text received before the failure or cancellation.
+    function aiError(code, message, extra) {
+        const e = new Error(message);
+        e.name = 'NeiraAIError';
+        e.code = code;
+        return Object.assign(e, extra);
+    }
+
+    const isAbort = e => !!e && (e.name === 'AbortError' || e.code === 20);
+
+    function partialTagLen(buf, tag) {
+        for (let n = Math.min(tag.length - 1, buf.length); n > 0; n--) if (tag.startsWith(buf.slice(buf.length - n))) return n;
+        return 0;
+    }
+
+    // Removes <think>…</think> from a stream, even when a tag is split across chunks.
+    function makeThinkFilter() {
+        let buf = '';
+        let inThink = false;
+        return {
+            push(chunk) {
+                buf += chunk;
+                let out = '';
+                for (;;) {
+                    if (inThink) {
+                        const end = buf.indexOf('</think>');
+                        if (end < 0) { buf = buf.slice(Math.max(0, buf.length - 7)); return out; }
+                        buf = buf.slice(end + 8).replace(/^\s+/, '');
+                        inThink = false;
+                    } else {
+                        const start = buf.indexOf('<think>');
+                        if (start < 0) {
+                            const keep = partialTagLen(buf, '<think>');
+                            out += buf.slice(0, buf.length - keep);
+                            buf = buf.slice(buf.length - keep);
+                            return out;
+                        }
+                        out += buf.slice(0, start);
+                        buf = buf.slice(start + 7);
+                        inThink = true;
+                    }
+                }
+            },
+            flush() { const rest = inThink ? '' : buf; buf = ''; return rest; }
+        };
+    }
+
+    function createOllamaClient(options) {
+        const cfg = Object.assign({}, OLLAMA_DEFAULTS, options || {});
+        const base = () => String(cfg.baseUrl || OLLAMA_DEFAULTS.baseUrl).replace(/\/+$/, '');
+        let controller = null;
+
+        const doFetch = (url, init) => {
+            const f = cfg.fetch || root.fetch;
+            if (typeof f !== 'function') throw aiError('unsupported', 'This environment has no fetch(), so the AI mode cannot run.');
+            return f.call(root, url, init);
+        };
+
+        // A failed fetch() looks the same whether Ollama is off or the browser blocked the request (CORS).
+        // A "no-cors" probe tells them apart: it only fails when nothing is listening.
+        async function diagnoseNetwork() {
+            const ctl = new AbortController();
+            const timer = setTimeout(() => ctl.abort(), 2500);
+            try {
+                await doFetch(base() + '/api/version', { mode: 'no-cors', signal: ctl.signal, credentials: 'omit', cache: 'no-store' });
+                return 'cors';
+            } catch (_) {
+                return 'not_running';
+            } finally {
+                clearTimeout(timer);
+            }
+        }
+
+        const notRunning = cause => aiError('not_running', `Couldn’t reach Ollama at ${base()}. Make sure Ollama is running (for example: ollama serve).`, { cause });
+        const corsBlocked = cause => aiError('cors', `Ollama is running at ${base()}, but the request was blocked (network/CORS). Start Ollama with OLLAMA_ORIGINS set to allow this app’s origin.`, { cause });
+        const modelMissing = name => aiError('model_not_found', `The model “${name}” isn’t installed in Ollama. Install it with: ollama pull ${name}`);
+
+        async function chat(args) {
+            const { messages, onToken, onDone, signal, model, options: gen } = args || {};
+            if (!Array.isArray(messages) || !messages.length) throw aiError('bad_request', 'No messages to send to the model.');
+
+            if (controller) controller.abort(); // only one answer streams at a time
+            const ctl = new AbortController();
+            controller = ctl;
+            let detach = () => {};
+            if (signal) {
+                if (signal.aborted) ctl.abort();
+                else {
+                    const onAbort = () => ctl.abort();
+                    signal.addEventListener('abort', onAbort, { once: true });
+                    detach = () => signal.removeEventListener('abort', onAbort);
+                }
+            }
+
+            const useModel = model || cfg.model;
+            const body = {
+                model: useModel,
+                stream: true,
+                options: Object.assign({ num_ctx: cfg.num_ctx, temperature: cfg.temperature, num_predict: cfg.num_predict }, gen),
+                messages
+            };
+            if (cfg.think !== undefined) body.think = cfg.think;
+
+            const filter = cfg.stripThink === false ? null : makeThinkFilter();
+            let full = '';
+            let info = null;
+            let finished = false;
+            const emit = piece => { full += piece; if (onToken) onToken(piece); };
+
+            try {
+                let res;
+                try {
+                    res = await doFetch(base() + '/api/chat', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(body),
+                        signal: ctl.signal,
+                        credentials: 'omit',          // never send cookies
+                        cache: 'no-store',
+                        referrerPolicy: 'no-referrer'
+                    });
+                } catch (e) {
+                    if (e && e.name === 'NeiraAIError') throw e;
+                    if (isAbort(e) || ctl.signal.aborted) throw aiError('aborted', 'Generation cancelled.');
+                    throw (await diagnoseNetwork()) === 'cors' ? corsBlocked(e) : notRunning(e);
+                }
+
+                if (!res.ok) {
+                    let msg = '';
+                    try {
+                        const t = await res.text();
+                        try { msg = JSON.parse(t).error || t; } catch (_) { msg = t; }
+                    } catch (_) { /* ignore */ }
+                    if (res.status === 404 || /not found/i.test(msg)) throw modelMissing(useModel);
+                    if (res.status === 403) throw corsBlocked();
+                    throw aiError('http_error', `Ollama returned HTTP ${res.status}${msg ? ': ' + clean(msg).slice(0, 200) : ''}.`, { status: res.status });
+                }
+                if (!res.body || typeof res.body.getReader !== 'function') throw aiError('unsupported', 'This environment cannot read streamed responses.');
+
+                // Ollama streams newline-delimited JSON: one object per line.
+                const handleLine = line => {
+                    let j;
+                    try { j = JSON.parse(line); } catch (_) { return; }
+                    if (j.error) {
+                        if (/not found/i.test(String(j.error))) throw modelMissing(useModel);
+                        throw aiError('stream_error', 'Ollama reported an error: ' + clean(j.error).slice(0, 200));
+                    }
+                    const chunk = j.message && j.message.content;
+                    if (chunk) {
+                        const out = filter ? filter.push(chunk) : chunk;
+                        if (out) emit(out);
+                    }
+                    if (j.done) { info = Object.assign({}, j); delete info.message; delete info.context; }
+                };
+
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                let buf = '';
+                for (;;) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
+                    buf += decoder.decode(value, { stream: true });
+                    let nl;
+                    while ((nl = buf.indexOf('\n')) >= 0) {
+                        const line = buf.slice(0, nl).trim();
+                        buf = buf.slice(nl + 1);
+                        if (line) handleLine(line);
+                    }
+                }
+                buf += decoder.decode();
+                if (buf.trim()) handleLine(buf.trim());
+                const tail = filter ? filter.flush() : '';
+                if (tail) emit(tail);
+
+                finished = true;
+                if (onDone) onDone(full, info);
+                return full;
+            } catch (e) {
+                if (e && e.name === 'NeiraAIError') { e.partial = full; throw e; }
+                if (isAbort(e) || ctl.signal.aborted) throw aiError('aborted', 'Generation cancelled.', { partial: full });
+                throw aiError('network', 'The connection to Ollama was lost: ' + clean(e && e.message).slice(0, 160), { partial: full, cause: e });
+            } finally {
+                detach();
+                if (!finished) { try { ctl.abort(); } catch (_) { /* ignore */ } } // release the connection on any failure
+                if (controller === ctl) controller = null;
+            }
+        }
+
+        function abort() { if (controller) controller.abort(); }
+        function isStreaming() { return controller !== null; }
+        function getConfig() { return { baseUrl: base(), model: cfg.model, num_ctx: cfg.num_ctx, temperature: cfg.temperature, num_predict: cfg.num_predict }; }
+
+        // Is Ollama reachable, and is the configured model installed? Never throws.
+        async function ping() {
+            const ctl = new AbortController();
+            const timer = setTimeout(() => ctl.abort(), 3000);
+            try {
+                const res = await doFetch(base() + '/api/tags', { signal: ctl.signal, credentials: 'omit', cache: 'no-store' });
+                if (!res.ok) return { available: false, reason: res.status === 403 ? 'cors' : 'http_error', status: res.status };
+                const data = await res.json();
+                const names = (data.models || []).map(m => m.name || m.model).filter(Boolean);
+                const want = cfg.model;
+                const modelInstalled = names.includes(want) || (!want.includes(':') && names.includes(want + ':latest'));
+                return { available: true, modelInstalled, models: names };
+            } catch (e) {
+                return { available: false, reason: await diagnoseNetwork() };
+            } finally {
+                clearTimeout(timer);
+            }
+        }
+
+        return { chat, abort, isStreaming, ping, getConfig };
+    }
+
+    // ------------------------------------------------------------------
+    // AI-backed versions of analyze / answer / summarizeSelection
+    // ------------------------------------------------------------------
+    const MAX_SELECTION_CHARS = 8000;
+
+    // Page text is untrusted: stop it from closing the """ fences around it.
+    const fence = s => String(s).replace(/"""/g, '" " "');
+
+    function pagePrompt(context, question) {
+        return 'PAGE CONTEXT:\n"""\n' + fence(context) + '\n"""\n\n' +
+            'USER QUESTION:\n' + question + '\n\n' +
+            'Answer using only the page context where possible. If the page does not contain the answer, say: “I couldn’t find that on this page.”';
+    }
+
+    function selectionPrompt(selection, excerpt, request) {
+        let p = 'SELECTED TEXT:\n"""\n' + fence(selection) + '\n"""\n\n';
+        if (excerpt) p += 'SURROUNDING PAGE CONTEXT:\n"""\n' + fence(excerpt) + '\n"""\n\n';
+        return p + 'USER REQUEST:\n' + request;
+    }
+
+    function pageStats(d) {
+        const words = wordCount(d);
+        return { words, minutes: Math.max(1, Math.round(words / 220)), links: d.counts.links, images: d.counts.images, kind: classify(d) };
+    }
+
+    const getClient = options => options.client || createOllamaClient(options.ollama || options);
+
+    // Keeps the prompt inside num_ctx (Ollama silently drops the START of an over-long prompt, system prompt included).
+    function resolveMaxChars(options, client) {
+        const cfg = client.getConfig();
+        const limit = Math.max(1000, Math.floor((cfg.num_ctx - cfg.num_predict - 800) * 2.5));
+        return Math.min(Math.max(500, Number(options.maxChars) || CONTEXT_DEFAULT_CHARS), limit);
+    }
+
+    function needPage(d) {
+        if (!d || !Array.isArray(d.sections)) throw aiError('bad_request', 'No page data was provided (run collectPage() first).');
+    }
+
+    // Sends one system+user prompt, streams tokens, then converts the finished Markdown to blocks.
+    async function runAI(head, prompt, meta, client, options, callbacks) {
+        if (callbacks.onStart) callbacks.onStart({ contextInfo: meta });
+        let info = null;
+        const gen = {};
+        for (const k of ['num_ctx', 'temperature', 'num_predict']) if (options[k] !== undefined) gen[k] = options[k];
+        let soFar = '';
+        const text = await client.chat({
+            messages: [{ role: 'system', content: SYSTEM_PROMPT }, { role: 'user', content: prompt }],
+            model: options.model,
+            options: gen,
+            signal: options.signal,
+            onToken: chunk => { soFar += chunk; if (callbacks.onToken) callbacks.onToken(chunk, soFar); },
+            onDone: (_full, i) => { info = i; }
+        });
+        const reply = String(text || '').trim();
+        if (!reply) throw aiError('empty_response', 'The model returned an empty reply. Try again or ask in a different way.');
+        const result = Object.assign({}, head, {
+            blocks: parseMarkdown(reply),
+            text: reply,
+            ai: true,
+            model: options.model || client.getConfig().model,
+            contextInfo: meta,
+            finishReason: (info && info.done_reason) || ''   // 'length' means the answer hit num_predict
+        });
+        if (callbacks.onDone) callbacks.onDone(result);
+        return result;
+    }
+
+    // Overview of the whole page.
+    // options:   { client | baseUrl, model, num_ctx, temperature, num_predict, maxChars, signal }
+    // callbacks: { onStart({contextInfo}), onToken(chunk, textSoFar), onDone(result) }
+    // resolves:  { kind, blocks, stats, text, ai:true, model, contextInfo, finishReason }
+    async function analyzeWithAI(pageData, options, callbacks) {
+        options = options || {};
+        callbacks = callbacks || {};
+        needPage(pageData);
+        const client = getClient(options);
+        const ctx = buildContext(pageData, { maxChars: resolveMaxChars(options, client) });
+        const meta = { originalChars: ctx.originalChars, sentChars: ctx.sentChars, truncated: ctx.truncated };
+        const prompt = pagePrompt(ctx.context, 'Give a concise overview of this page: what it is, what it contains, and the key takeaways.');
+        return runAI({ kind: classify(pageData), stats: pageStats(pageData) }, prompt, meta, client, options, callbacks);
+    }
+
+    // A question about the page. If options.selection is set, the selected text is the focus and
+    // only a short excerpt around it is added. Other options as in analyzeWithAI, plus
+    // { selection, excerptChars }.
+    async function answerWithAI(question, pageData, options, callbacks) {
+        options = options || {};
+        callbacks = callbacks || {};
+        const q = clean(question);
+        if (!q) throw aiError('bad_request', 'Ask a question first.');
+        const client = getClient(options);
+        const selRaw = String(options.selection || '').trim();
+
+        if (selRaw) {
+            const limit = options.maxSelectionChars || MAX_SELECTION_CHARS;
+            const selTruncated = selRaw.length > limit;
+            const sel = selTruncated ? selRaw.slice(0, limit) + '\n[…selection truncated…]' : selRaw;
+            const excerpt = pageData && selRaw.length < 4000 ? selectionExcerpt(pageData, selRaw, options.excerptChars || 2500) : '';
+            const meta = { originalChars: selRaw.length, sentChars: sel.length + excerpt.length, truncated: selTruncated, selection: true };
+            const head = { kind: 'selection', stats: { words: clean(selRaw).split(/\s+/).filter(Boolean).length } };
+            return runAI(head, selectionPrompt(sel, excerpt, q), meta, client, options, callbacks);
+        }
+
+        needPage(pageData);
+        const ctx = buildContext(pageData, { maxChars: resolveMaxChars(options, client), question: q });
+        const meta = { originalChars: ctx.originalChars, sentChars: ctx.sentChars, truncated: ctx.truncated };
+        return runAI({ stats: {} }, pagePrompt(ctx.context, q), meta, client, options, callbacks);
+    }
+
+    // Summary (or another request, via options.question) about selected text.
+    // Pass options.pageData to add a short excerpt around the selection when that helps.
+    async function summarizeSelectionWithAI(selection, options, callbacks) {
+        options = options || {};
+        callbacks = callbacks || {};
+        const selRaw = String(selection || '').trim();
+        if (!selRaw) throw aiError('bad_request', 'No text is selected.');
+        const client = getClient(options);
+        const limit = options.maxSelectionChars || MAX_SELECTION_CHARS;
+        const selTruncated = selRaw.length > limit;
+        const sel = selTruncated ? selRaw.slice(0, limit) + '\n[…selection truncated…]' : selRaw;
+        const d = options.pageData;
+        const excerpt = d && Array.isArray(d.sections) && selRaw.length < 4000 ? selectionExcerpt(d, selRaw, options.excerptChars || 2500) : '';
+        const meta = { originalChars: selRaw.length, sentChars: sel.length + excerpt.length, truncated: selTruncated, selection: true };
+        const request = clean(options.question) || 'Summarize the selected text.';
+        const head = { kind: 'selection', stats: { words: clean(selRaw).split(/\s+/).filter(Boolean).length } };
+        return runAI(head, selectionPrompt(sel, excerpt, request), meta, client, options, callbacks);
+    }
+
+    const api = {
+        // existing
+        pageContext, collectPage, classify, analyze, summarizeSelection, answer, parseMarkdown, inlineParts, blocksToText, splitSentences, pickTop, trim, wordCount,
+        // optional AI mode
+        createOllamaClient, analyzeWithAI, answerWithAI, summarizeSelectionWithAI,
+        buildPageContext: buildContext, SYSTEM_PROMPT, OLLAMA_DEFAULTS
+    };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     else root.NeiraAssistant = api;
 })(typeof window !== 'undefined' ? window : globalThis);

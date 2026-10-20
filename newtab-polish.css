@@ -57,7 +57,7 @@
     radial-gradient(1px 1px at 35% 70%, #fff, transparent),
     radial-gradient(1.2px 1.2px at 88% 78%, #fff, transparent),
     radial-gradient(1px 1px at 10% 85%, #fff, transparent),
-    radial-gradient(ellipse at 50% 100%, #2a1a5e 0%, #07060f 70%);
+    radial-gradient(ellipse at 50% 100%, #12214d 0%, #07060f 70%);
 }
 /* "None" and "Image / video" tiles */
 .thumb.wp-none { color: var(--muted); font-size: 20px; }
@@ -236,3 +236,77 @@ input:checked + .slider:before { transform: translateX(20px); }
 .opt select:focus, .opt input[type="date"]:focus { border-color: var(--accent); box-shadow: var(--ring); }
 .opt input[type="number"] { background: rgba(255,255,255,.06); border: 1px solid rgba(255,255,255,.14); color: var(--text); padding: 9px 12px; border-radius: 10px; font-size: 13px; outline: none; color-scheme: dark; }
 .opt input[type="number"]:focus { border-color: var(--accent); box-shadow: var(--ring); }
+/* The actual wallpaper backgrounds */
+#wallpaper {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    transition: background 0.3s ease;
+}
+
+#wallpaper.wp-none { background: var(--bg); }
+
+#wallpaper.wp-neon {
+    background: 
+        linear-gradient(rgba(13, 11, 20, 0.4), rgba(13, 11, 20, 0.4)),
+        linear-gradient(45deg, #ff00cc, #333399);
+}
+
+#wallpaper.wp-aurora {
+    background: 
+        radial-gradient(circle at 50% 0%, rgba(16, 185, 129, 0.4) 0%, transparent 60%),
+        radial-gradient(circle at 100% 100%, rgba(59, 130, 246, 0.4) 0%, transparent 60%),
+        #0b0f19;
+}
+
+#wallpaper.wp-midnight {
+    background: radial-gradient(circle at 50% 50%, #1e1b4b 0%, #0a0b0e 100%);
+}
+
+#wallpaper.wp-stars {
+    background: radial-gradient(ellipse at 50% 100%, #12214d 0%, #07060f 70%);
+}
+/* ===== Theme-aware wallpapers (follow --accent) ===== */
+#wallpaper.wp-none { background: var(--bg); }
+
+#wallpaper.wp-neon {
+    background:
+        linear-gradient(rgba(13,11,20,.4), rgba(13,11,20,.4)),
+        linear-gradient(45deg,
+            color-mix(in srgb, var(--accent) 70%, #ff00cc),
+            color-mix(in srgb, var(--accent) 60%, #000));
+}
+
+#wallpaper.wp-aurora {
+    background:
+        radial-gradient(circle at 50% 0%,   color-mix(in srgb, var(--accent) 55%, transparent) 0%, transparent 60%),
+        radial-gradient(circle at 100% 100%, color-mix(in srgb, var(--accent) 35%, #3b82f6) 0%, transparent 60%),
+        color-mix(in srgb, var(--accent) 6%, #0b0f19);
+}
+
+#wallpaper.wp-midnight {
+    background: radial-gradient(circle at 50% 50%,
+        color-mix(in srgb, var(--accent) 35%, #000) 0%, #0a0b0e 100%);
+}
+
+/* Stars: accent-tinted glow + star dots */
+#wallpaper.wp-stars,
+.thumb.wp-stars {
+    background:
+        radial-gradient(1.2px 1.2px at 20% 30%, #fff, transparent),
+        radial-gradient(1px 1px at 55% 20%, #fff, transparent),
+        radial-gradient(1.4px 1.4px at 78% 45%, #fff, transparent),
+        radial-gradient(1px 1px at 35% 70%, #fff, transparent),
+        radial-gradient(1.2px 1.2px at 88% 78%, #fff, transparent),
+        radial-gradient(1px 1px at 10% 85%, #fff, transparent),
+        radial-gradient(ellipse at 50% 100%,
+            color-mix(in srgb, var(--accent) 45%, #000) 0%, #07060f 70%);
+}
+
+/* Matching thumbnails in the Customize panel */
+.thumb.wp-neon     { background: linear-gradient(45deg, color-mix(in srgb, var(--accent) 70%, #ff00cc), color-mix(in srgb, var(--accent) 60%, #000)); }
+.thumb.wp-aurora   { background: radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--accent) 55%, transparent), transparent 60%), radial-gradient(circle at 100% 100%, color-mix(in srgb, var(--accent) 35%, #3b82f6), transparent 60%), color-mix(in srgb, var(--accent) 6%, #0b0f19); }
+.thumb.wp-midnight { background: radial-gradient(circle at 50% 50%, color-mix(in srgb, var(--accent) 35%, #000), #0a0b0e); }

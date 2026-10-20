@@ -18,14 +18,13 @@
                 const text = input.value.trim();
                 if (text) api.newtab.go(text);
             });
-            // Focus the field so the user can type right away
             setTimeout(() => input.focus(), 50);
         }
         return; // nothing else runs in private mode
     }
 
     // =====================================================================
-    // NORMAL MODE (unchanged from your existing behaviour)
+    // NORMAL MODE
     // =====================================================================
     const PRESETS = [
         { value: 'none', label: 'None', cls: 'wp-none' },
@@ -70,7 +69,7 @@
     }
 
     // -------------------------------------------------------------------
-    // Wallpaper
+    // Wallpaper Engine
     // -------------------------------------------------------------------
     let stars = null;
     let videoEl = null;
@@ -135,6 +134,7 @@
 
         const value = settings.wallpaper || 'preset:neon';
         if (value === 'none') { layer.classList.add('wp-none'); return; }
+        
         if (value.startsWith('preset:')) {
             const name = value.slice(7);
             layer.classList.add('wp-' + name);
@@ -145,20 +145,17 @@
             }
             return;
         }
+        
         if (value.startsWith('file:')) {
             const name = value.slice(5);
             const url = 'neira-asset://wallpaper/' + encodeURIComponent(name);
             if (/\.(mp4|webm)$/i.test(name)) {
                 const v = document.createElement('video');
-                v.muted = true;
-                v.loop = true;
-                v.playsInline = true;
-                v.setAttribute('muted', '');
+                v.muted = true; v.loop = true; v.playsInline = true; v.setAttribute('muted', '');
                 v.addEventListener('error', () => {
-                    toast('That video could not be played, so the default wallpaper is showing.');
+                    toast('That video could not be played.');
                     layer.replaceChildren();
                     layer.className = 'wallpaper wp-neon';
-                    videoEl = null;
                 });
                 v.src = url;
                 layer.appendChild(v);
@@ -442,7 +439,7 @@
         if (!/^[a-z][a-z0-9+.-]*:\/\//i.test(address)) address = 'https://' + address;
         let url;
         try { url = new URL(address); } catch (_) { url = null; }
-        if (!url || !/^https?:$/.test(url.protocol) || !url.hostname.includes('.') && url.hostname !== 'localhost') {
+        if (!url || !/^https?:$/.test(url.protocol) || (!url.hostname.includes('.') && url.hostname !== 'localhost')) {
             $('dial-error').textContent = 'That doesn’t look like a valid web address.';
             return;
         }
@@ -486,6 +483,7 @@
         grid.replaceChildren();
         const current = settings.wallpaper || 'preset:neon';
 
+        // Presets
         for (const p of PRESETS) {
             const card = el('button', 'wp-card' + (current === p.value ? ' active' : ''));
             card.type = 'button';
@@ -496,6 +494,7 @@
             grid.appendChild(card);
         }
 
+        // Custom File
         if (current.startsWith('file:')) {
             const name = current.slice(5);
             const card = el('button', 'wp-card active');
@@ -518,6 +517,7 @@
             grid.appendChild(card);
         }
 
+        // Upload Button
         const upload = el('button', 'wp-card');
         upload.type = 'button';
         const thumb = el('div', 'thumb', '+');
@@ -594,6 +594,7 @@
         settings = next;
         window.neiraTheme.apply(next);
         window.neiraTheme.persist(next);
+        
         if (wallpaperChanged) applyWallpaper();
         if ($('clock')) $('clock').hidden = settings.showClock === false;
         if ($('engine')) $('engine').value = settings.engine;
@@ -604,22 +605,29 @@
         tick();
         if (qInput) qInput.focus();
         renderDial();
+        
         const [s, d, h, b] = await Promise.allSettled([
             api.settings.get(), api.speedDial.get(), api.history.get(), api.bookmarks.get()
         ]);
+        
         if (d.status === 'fulfilled') dial = d.value;
         if (h.status === 'fulfilled') historyItems = h.value;
         if (b.status === 'fulfilled') bookmarkItems = b.value;
-        settings = { ...settings, wallpaper: undefined };
+        
+        // Default settings fallback
+        settings = { ...settings, wallpaper: 'preset:neon' };
         if (s.status === 'fulfilled') applySettings(s.value);
         else applyWallpaper();
+        
         renderDial();
 
         api.settings.onChange(applySettings);
         api.speedDial.onChange(list => { dial = list; renderDial(); });
         api.history.onChange(list => { historyItems = list; });
         api.bookmarks.onChange(list => { bookmarkItems = list; });
+        
         if (location.hash === '#customize') openDrawer();
     }
+    
     init();
 })();

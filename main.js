@@ -122,7 +122,8 @@ const STORE_DEFAULTS = {
         autoSignin: true,
         trackerBlocking: true,
         trackerAllowlist: [],
-        hasSeenImport: false
+                hasSeenImport: false,
+        contextMenu: {}
     },
     shortcuts: {},
     bookmarks: [],
@@ -171,9 +172,27 @@ let dialDir = '';
 
 function validWallpaper(value) {
     if (typeof value !== 'string') return false;
-    if (value === 'none' || /^preset:(neon|aurora|midnight|stars)$/.test(value)) return true;
-    if (!value.startsWith('file:') || !NAME_RE.test(value.slice(5))) return false;
-    return fs.existsSync(path.join(wallpaperDir, value.slice(5)));
+    if (value === 'none') return true;
+    if (/^preset:[\w.-]{1,40}$/.test(value)) return true;
+    if (value.startsWith('file:')) return NAME_RE.test(value.slice(5));
+    return false;
+}
+const CTX_SHADOWS = ['none', 'soft', 'medium', 'strong'];
+function cleanContextMenu(v) {
+    const out = {};
+    if (!v || typeof v !== 'object') return out;
+    for (const k of ['bg', 'text', 'border', 'hover']) {
+        if (typeof v[k] === 'string' && /^#[0-9a-f]{6}$/i.test(v[k])) out[k] = v[k].toLowerCase();
+    }
+    const num = (k, min, max) => {
+        const n = Number(v[k]);
+        if (v[k] !== undefined && Number.isFinite(n)) out[k] = Math.max(min, Math.min(max, Math.round(n)));
+    };
+    num('opacity', 40, 100); num('radius', 0, 24); num('fontSize', 11, 18);
+    num('padding', 3, 14); num('blur', 0, 24); num('minWidth', 180, 320);
+    if (CTX_SHADOWS.includes(v.shadow)) out.shadow = v.shadow;
+    for (const k of ['showShortcuts', 'animate']) if (typeof v[k] === 'boolean') out[k] = v[k];
+    return out;
 }
 
 function removeWallpaperFile(previous, next) {
@@ -222,7 +241,7 @@ let activeGuest = null;
 const LEGACY_UNLOCK = 'requiem';
 
 const hashPin = (salt, pin) => crypto.createHash('sha256').update(salt + ':' + pin).digest('hex');
-const todayKey = () => new Date().toISOString().slice(0, 10);
+const todayKey = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
 
 const RECOVERY_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 function generateRecoveryCode() {
@@ -453,7 +472,7 @@ function isInternalUrl(u) {
     try {
         if (!u || !u.startsWith('file:')) return false;
         const p = path.resolve(fileURLToPath(u)).toLowerCase();
-        return p.startsWith(path.resolve(__dirname).toLowerCase());
+        return p.startsWith(path.resolve(__dirname).toLowerCase() + path.sep);
     } catch (_) {
         return false;
     }
@@ -796,6 +815,7 @@ app.on('web-contents-created', (_e, contents) => {
             return;
         } else {
             // Web pages identify as Chrome (no "Electron" / app name in the UA).
+                        webPreferences.preload = path.join(__dirname, 'page-preload.js');
         }
 
         const part = params.partition || '';
@@ -850,6 +870,16 @@ function setupSession(ses, isPrivate = false) {
     };
     const ua = cleanUserAgent();
     if (typeof ses.setUserAgent === 'function') ses.setUserAgent(ua);
+        ses.webRequest.onBeforeSendHeaders({ urls: ['*://*/*'] }, (details, cb) => {
+        const h = details.requestHeaders;
+        for (const k of Object.keys(h)) {
+            const l = k.toLowerCase();
+            if (l === 'user-agent') h[k] = ua;
+            else if (l === 'sec-ch-ua') h[k] = SEC_CH_UA;
+            else if (l === 'sec-ch-ua-full-version-list') h[k] = SEC_CH_UA_FULL;
+        }
+        cb({ requestHeaders: h });
+    });
 
     // Tracker blocking + parental safe-search, in one request hook.
     ses.webRequest.onBeforeRequest({ urls: ['*://*/*'] }, (details, cb) => {
@@ -1193,6 +1223,7 @@ function registerIpc() {
         if (key === 'tabLayout' && !['horizontal', 'vertical'].includes(value)) return s;
         if (key === 'newTabPage' && !['neira', 'homepage'].includes(value)) return s;
         if (key === 'wallpaper' && !validWallpaper(value)) return s;
+                if (key === 'contextMenu') value = cleanContextMenu(value);
         if (key === 'accent') {
             if (typeof value !== 'string' || !/^#[0-9a-f]{6}$/i.test(value)) return s;
             value = value.toLowerCase();
@@ -1280,7 +1311,7 @@ function registerIpc() {
         site = String(site || '').trim();
         user = String(user || '').trim();
         pass = String(pass || '');
-        if (!site || !user || !pass) return { ok: false };
+        if (!site || !user || !pass) return { ok: false, reason: 'Fill in the website, username and password.' };
         store.data.passwords.push({ id: crypto.randomUUID(), site, user, pass: encrypt(pass) });
         store.save();
         return { ok: true };
@@ -2744,10 +2775,10 @@ app.whenReady().then(() => {
             message: 'A reset file was found in the Neira profile folder, so parental controls have been turned off and the PIN cleared.'
         });
     }
+});
 
-    app.on('activate', () => {
-        if (BrowserWindow.getAllWindows().length === 0) createWindow({ isPrivate: !!store.data.settings.incognitoStartup });
-    });
+app.on('activate', () => {
+    if (BrowserWindow.getAllWindows().length === 0) createWindow({ isPrivate: !!store.data.settings.incognitoStartup });
 });
 
 app.on('before-quit', () => { if (store) store.flush(); });
@@ -2755,3 +2786,4 @@ app.on('before-quit', () => { if (store) store.flush(); });
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit();
 });
+

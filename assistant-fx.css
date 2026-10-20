@@ -126,7 +126,6 @@
     content: ""; position: absolute; inset: 0; z-index: 0; border-radius: inherit; padding: 1.5px; pointer-events: none;
     background: conic-gradient(from var(--fx-angle), transparent 0 55%, color-mix(in srgb, var(--accent) 35%, #fff) 78%, var(--accent) 88%, transparent 100%);
     -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
-    -webkit-mask-composite: xor;
     mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
     opacity: 0; transition: opacity 0.5s;
 }
