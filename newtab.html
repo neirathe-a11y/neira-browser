@@ -8,6 +8,7 @@
     <title>New Tab</title>
     <script src="boot.js"></script>
     <style>
+        
         :root {
             --accent: #8b5cf6;
             --on-accent: #ffffff;
@@ -374,6 +375,494 @@
             .incog-illustration { width: min(280px, 60vw); }
             .incog-text { max-width: 100%; }
         }
+        /* =========================================
+   NEIRA UI UPGRADE v2: CUSTOMIZE DRAWER
+   Drop-in replacement for the previous block.
+   No dependency on an .open class; your original positioning is untouched.
+   ========================================= */
+
+@property --angle {
+    syntax: "<angle>";
+    initial-value: 0deg;
+    inherits: false;
+}
+
+.drawer {
+    --d-ease: cubic-bezier(.22, 1, .36, 1);
+    --d-spring: cubic-bezier(.34, 1.56, .64, 1);
+    --d-glass: rgba(16, 12, 28, 0.72);
+    --d-card: rgba(255, 255, 255, 0.035);
+    --d-line: rgba(255, 255, 255, 0.08);
+
+    /* NOTE: do NOT set position here, your original fixed/absolute placement must stay */
+    width: 380px !important;
+    overflow: hidden !important;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif !important;
+    background:
+        radial-gradient(600px 300px at 100% 0%, color-mix(in srgb, var(--accent) 22%, transparent), transparent 70%),
+        radial-gradient(500px 400px at 0% 100%, color-mix(in srgb, var(--accent) 12%, transparent), transparent 70%),
+        var(--d-glass) !important;
+    backdrop-filter: blur(28px) saturate(1.6) !important;
+    -webkit-backdrop-filter: blur(28px) saturate(1.6) !important;
+    border-left: 1px solid var(--d-line) !important;
+    box-shadow: -24px 0 60px rgba(0, 0, 0, 0.65) !important;
+    transition: transform .55s var(--d-ease), opacity .35s ease !important;
+}
+
+/* animated neon edge on the left side */
+.drawer::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 2px;
+    background: linear-gradient(180deg, transparent, var(--accent), transparent, var(--accent), transparent);
+    background-size: 100% 300%;
+    animation: edgeFlow 5s linear infinite;
+    filter: drop-shadow(0 0 8px var(--accent));
+    pointer-events: none;
+    z-index: 3;
+}
+
+/* faint moving scan sheen across the whole panel */
+.drawer::after {
+    content: "";
+    position: absolute;
+    inset: -50% 0 auto 0;
+    height: 50%;
+    background: linear-gradient(180deg, transparent, rgba(255, 255, 255, 0.035), transparent);
+    animation: sheen 7s ease-in-out infinite;
+    pointer-events: none;
+    z-index: 0;
+}
+
+@keyframes edgeFlow { to { background-position: 0 -300%; } }
+@keyframes sheen { 0% { transform: translateY(0); } 100% { transform: translateY(400%); } }
+
+/* ---------- Staggered entrance (content is always visible; animation is a bonus) ---------- */
+.drawer-head,
+.drawer-body > * {
+    animation: slideIn .6s var(--d-ease) both;
+}
+.drawer-head { animation-delay: .05s; }
+.drawer-body > *:nth-child(1) { animation-delay: .10s; }
+.drawer-body > *:nth-child(2) { animation-delay: .17s; }
+.drawer-body > *:nth-child(3) { animation-delay: .24s; }
+.drawer-body > *:nth-child(4) { animation-delay: .31s; }
+.drawer-body > *:nth-child(5) { animation-delay: .38s; }
+.drawer-body > *:nth-child(6) { animation-delay: .45s; }
+.drawer-body > *:nth-child(n+7) { animation-delay: .52s; }
+
+@keyframes slideIn {
+    from { opacity: 0; transform: translateX(28px) scale(.98); }
+    to   { opacity: 1; transform: none; }
+}
+
+/* ---------- Header ---------- */
+.drawer-head {
+    position: relative !important;
+    z-index: 2 !important;
+    padding: 26px 24px 18px !important;
+    border-bottom: 1px solid var(--d-line) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+}
+
+.drawer-head span {
+    font-size: 15px !important;
+    font-weight: 900 !important;
+    letter-spacing: .16em !important;
+    text-transform: uppercase !important;
+    background: linear-gradient(90deg, #fff, var(--accent), #fff) !important;
+    background-size: 200% 100% !important;
+    -webkit-background-clip: text !important;
+    background-clip: text !important;
+    color: transparent !important;
+    animation: titleShift 4s linear infinite;
+}
+
+@keyframes titleShift { to { background-position: -200% 0; } }
+
+.icon-btn {
+    width: 34px !important;
+    height: 34px !important;
+    border-radius: 10px !important;
+    background: rgba(255, 255, 255, 0.06) !important;
+    border: 1px solid var(--d-line) !important;
+    color: #fff !important;
+    display: grid !important;
+    place-items: center !important;
+    cursor: pointer !important;
+    transition: transform .35s var(--d-spring), background .2s, color .2s, box-shadow .2s !important;
+}
+.icon-btn:hover {
+    background: rgba(239, 68, 68, 0.2) !important;
+    color: #ff5d5d !important;
+    transform: rotate(90deg) scale(1.1) !important;
+    box-shadow: 0 0 18px rgba(239, 68, 68, 0.45) !important;
+}
+.icon-btn:active { transform: rotate(90deg) scale(.92) !important; }
+
+/* ---------- Body + scrollbar ---------- */
+.drawer-body {
+    position: relative !important;
+    z-index: 2 !important;
+    padding: 22px 22px 32px !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 22px !important;
+    overflow-y: auto !important;
+    scrollbar-width: thin;
+    scrollbar-color: var(--accent) transparent;
+}
+.drawer-body::-webkit-scrollbar { width: 6px; }
+.drawer-body::-webkit-scrollbar-thumb {
+    background: linear-gradient(var(--accent), transparent);
+    border-radius: 6px;
+}
+
+/* ---------- Section cards (GX-style panels, our own look) ---------- */
+.drawer-body > section,
+.drawer-body > .section,
+.drawer-body > .card {
+    position: relative !important;
+    padding: 16px !important;
+    border-radius: 16px !important;
+    background: var(--d-card) !important;
+    border: 1px solid var(--d-line) !important;
+    transition: transform .35s var(--d-ease), border-color .3s, box-shadow .3s !important;
+}
+
+/* rotating gradient border appears on hover */
+.drawer-body > section::before,
+.drawer-body > .section::before,
+.drawer-body > .card::before {
+    content: "";
+    position: absolute;
+    inset: -1px;
+    border-radius: inherit;
+    padding: 1px;
+    background: conic-gradient(from var(--angle), transparent 0 60%, var(--accent), transparent);
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    opacity: 0;
+    transition: opacity .3s;
+    animation: spinBorder 3.5s linear infinite;
+    pointer-events: none;
+}
+.drawer-body > section:hover::before,
+.drawer-body > .section:hover::before,
+.drawer-body > .card:hover::before { opacity: 1; }
+
+.drawer-body > section:hover,
+.drawer-body > .section:hover,
+.drawer-body > .card:hover {
+    transform: translateY(-2px) !important;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.35), 0 0 30px color-mix(in srgb, var(--accent) 12%, transparent) !important;
+}
+
+@keyframes spinBorder { to { --angle: 360deg; } }
+
+.drawer h3 {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    font-size: 11px !important;
+    text-transform: uppercase !important;
+    letter-spacing: .14em !important;
+    color: color-mix(in srgb, var(--accent) 75%, #fff) !important;
+    font-weight: 800 !important;
+    margin: 0 0 14px !important;
+}
+/* little glowing pip before each section title */
+.drawer h3::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: 2px;
+    background: var(--accent);
+    box-shadow: 0 0 10px var(--accent);
+    animation: pip 2.4s ease-in-out infinite;
+}
+@keyframes pip { 50% { transform: scale(1.5) rotate(45deg); opacity: .6; } }
+
+/* ---------- Segmented control with sliding feel ---------- */
+.segmented-control {
+    position: relative !important;
+    display: flex !important;
+    background: rgba(0, 0, 0, 0.35) !important;
+    border-radius: 14px !important;
+    padding: 4px !important;
+    border: 1px solid var(--d-line) !important;
+    gap: 4px !important;
+}
+
+.segmented-control button {
+    flex: 1 !important;
+    background: transparent !important;
+    border: none !important;
+    color: rgba(255, 255, 255, 0.55) !important;
+    padding: 10px 0 !important;
+    font-size: 13px !important;
+    font-weight: 700 !important;
+    border-radius: 10px !important;
+    cursor: pointer !important;
+    transition: all .3s var(--d-ease) !important;
+}
+.segmented-control button:hover {
+    color: #fff !important;
+    background: rgba(255, 255, 255, 0.06) !important;
+}
+.segmented-control button:active { transform: scale(.95) !important; }
+.segmented-control button.active {
+    color: #000 !important;
+    background: var(--accent) !important;
+    box-shadow: 0 0 20px color-mix(in srgb, var(--accent) 70%, transparent), inset 0 1px 0 rgba(255, 255, 255, .4) !important;
+    animation: pop .4s var(--d-spring);
+}
+@keyframes pop { 0% { transform: scale(.88); } 100% { transform: scale(1); } }
+
+/* ---------- Rows + switches ---------- */
+.row {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    padding: 10px 8px !important;
+    margin: 0 -8px !important;
+    border-radius: 10px !important;
+    transition: background .2s !important;
+}
+.row:hover { background: rgba(255, 255, 255, 0.04) !important; }
+
+.row label:first-child {
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    color: rgba(255, 255, 255, 0.88) !important;
+}
+
+.switch {
+    position: relative !important;
+    display: inline-block !important;
+    width: 46px !important;
+    height: 26px !important;
+}
+.switch input { opacity: 0 !important; width: 0 !important; height: 0 !important; }
+
+.slider {
+    position: absolute !important;
+    cursor: pointer !important;
+    inset: 0 !important;
+    background: rgba(255, 255, 255, 0.1) !important;
+    border: 1px solid var(--d-line) !important;
+    border-radius: 26px !important;
+    transition: background .3s, box-shadow .3s !important;
+}
+.slider:before {
+    position: absolute !important;
+    content: "" !important;
+    height: 18px !important;
+    width: 18px !important;
+    left: 3px !important;
+    top: 3px !important;
+    background: #fff !important;
+    border-radius: 50% !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4) !important;
+    transition: transform .4s var(--d-spring), width .2s !important;
+}
+.switch:active .slider:before { width: 24px !important; }
+
+input:checked + .slider {
+    background: var(--accent) !important;
+    box-shadow: 0 0 16px var(--accent), 0 0 4px var(--accent) inset !important;
+}
+input:checked + .slider:before { transform: translateX(20px) !important; }
+input:checked:active + .slider:before { transform: translateX(14px) !important; }
+
+/* ---------- Expandable rows ---------- */
+.customize-row {
+    position: relative !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    padding: 14px 8px !important;
+    margin: 0 -8px !important;
+    border-radius: 10px !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05) !important;
+    cursor: pointer !important;
+    font-size: 14px !important;
+    font-weight: 500 !important;
+    color: rgba(255, 255, 255, 0.88) !important;
+    overflow: hidden !important;
+    transition: color .2s, background .2s, padding-left .3s var(--d-ease) !important;
+}
+/* accent bar slides in from the left */
+.customize-row::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 20%;
+    bottom: 20%;
+    width: 3px;
+    border-radius: 3px;
+    background: var(--accent);
+    box-shadow: 0 0 10px var(--accent);
+    transform: scaleY(0);
+    transition: transform .3s var(--d-spring);
+}
+.customize-row:hover {
+    color: #fff !important;
+    background: linear-gradient(90deg, color-mix(in srgb, var(--accent) 16%, transparent), transparent) !important;
+    padding-left: 16px !important;
+}
+.customize-row:hover::before { transform: scaleY(1); }
+
+.customize-row .chevron {
+    color: rgba(255, 255, 255, 0.3) !important;
+    font-size: 16px !important;
+    transition: transform .3s var(--d-spring), color .2s !important;
+}
+.customize-row:hover .chevron {
+    color: var(--accent) !important;
+    transform: translateX(5px) !important;
+}
+
+/* ---------- Text inputs ---------- */
+.input-group { margin-top: 12px !important; }
+
+.input-group label {
+    display: block !important;
+    font-size: 11px !important;
+    letter-spacing: .06em !important;
+    text-transform: uppercase !important;
+    color: rgba(255, 255, 255, 0.45) !important;
+    margin-bottom: 6px !important;
+}
+
+.input-group input[type="text"] {
+    width: 100% !important;
+    box-sizing: border-box !important;
+    background: rgba(0, 0, 0, 0.35) !important;
+    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+    color: #fff !important;
+    padding: 11px 14px !important;
+    border-radius: 10px !important;
+    font-size: 13px !important;
+    outline: none !important;
+    font-family: inherit !important;
+    transition: border-color .25s, box-shadow .25s, background .25s !important;
+}
+.input-group input[type="text"]:hover { border-color: rgba(255, 255, 255, 0.2) !important; }
+.input-group input[type="text"]:focus {
+    background: rgba(0, 0, 0, 0.5) !important;
+    border-color: var(--accent) !important;
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent), 0 0 22px color-mix(in srgb, var(--accent) 30%, transparent) !important;
+}
+
+/* ---------- Buttons ---------- */
+.drawer-footer-btns {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 10px !important;
+    margin-top: 8px !important;
+}
+
+.btn {
+    position: relative !important;
+    overflow: hidden !important;
+    width: 100% !important;
+    padding: 13px !important;
+    border-radius: 12px !important;
+    font-size: 13px !important;
+    font-weight: 700 !important;
+    letter-spacing: .03em !important;
+    cursor: pointer !important;
+    border: 1px solid rgba(255, 255, 255, 0.12) !important;
+    background: rgba(255, 255, 255, 0.04) !important;
+    color: #fff !important;
+    font-family: inherit !important;
+    text-align: center !important;
+    transition: transform .3s var(--d-spring), background .2s, border-color .2s, box-shadow .3s !important;
+}
+/* shine sweep */
+.btn::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    left: -80%;
+    width: 50%;
+    height: 100%;
+    background: linear-gradient(100deg, transparent, rgba(255, 255, 255, 0.25), transparent);
+    transform: skewX(-20deg);
+    transition: left .6s var(--d-ease);
+}
+.btn:hover::after { left: 130%; }
+.btn:hover {
+    background: rgba(255, 255, 255, 0.09) !important;
+    border-color: rgba(255, 255, 255, 0.25) !important;
+    transform: translateY(-2px) !important;
+}
+.btn:active { transform: translateY(0) scale(.97) !important; }
+
+.btn-primary {
+    background: linear-gradient(135deg, var(--accent), color-mix(in srgb, var(--accent) 60%, #fff)) !important;
+    border-color: transparent !important;
+    color: #000 !important;
+    box-shadow: 0 6px 22px color-mix(in srgb, var(--accent) 45%, transparent) !important;
+    animation: breathe 3s ease-in-out infinite;
+}
+.btn-primary:hover {
+    filter: brightness(1.1) !important;
+    box-shadow: 0 10px 32px color-mix(in srgb, var(--accent) 70%, transparent) !important;
+}
+@keyframes breathe {
+    50% { box-shadow: 0 6px 34px color-mix(in srgb, var(--accent) 75%, transparent); }
+}
+
+/* ---------- Respect reduced motion ---------- */
+@media (prefers-reduced-motion: reduce) {
+    .drawer *, .drawer::before, .drawer::after {
+        animation: none !important;
+        transition-duration: .01s !important;
+    }
+    .drawer-body > *, .drawer-head { opacity: 1 !important; transform: none !important; }
+}
+/* ---------- Three-line customize button ---------- */
+.customize-btn {
+    top: 16px; right: 18px;
+    width: 44px; height: 44px; padding: 0; gap: 0;
+    justify-content: center; align-items: center;
+    border-radius: 14px;
+    background: color-mix(in srgb, var(--accent) 10%, rgba(12, 10, 20, 0.55));
+    border: 1px solid var(--line);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+    transition: transform .35s cubic-bezier(.34, 1.56, .64, 1), border-color .25s, box-shadow .25s, background .25s;
+}
+.customize-btn:hover {
+    transform: translateY(-2px) scale(1.06);
+    border-color: var(--accent);
+    background: color-mix(in srgb, var(--accent) 22%, rgba(12, 10, 20, 0.6));
+    box-shadow: 0 8px 26px rgba(0, 0, 0, 0.4), 0 0 22px color-mix(in srgb, var(--accent) 45%, transparent);
+}
+.customize-btn:active { transform: scale(.92); }
+
+.bars { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; width: 20px; }
+.bars i {
+    display: block; height: 2px; width: 100%; border-radius: 2px;
+    background: var(--text);
+    transition: width .35s cubic-bezier(.22, 1, .36, 1), background .25s, box-shadow .25s;
+}
+.bars i:nth-child(2) { width: 70%; }
+.bars i:nth-child(3) { width: 45%; }
+
+/* on hover the lines even out and glow in your accent colour */
+.customize-btn:hover .bars i {
+    width: 100%;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent);
+}
+.customize-btn:hover .bars i:nth-child(2) { transition-delay: .05s; }
+.customize-btn:hover .bars i:nth-child(3) { transition-delay: .1s; }
     </style>
     <link rel="stylesheet" href="newtab-polish.css">
     <script src="newtab-extras.js"></script>
@@ -407,8 +896,9 @@
 
             <div class="dial" id="dial" role="list" aria-label="Speed Dial"></div>
         </main>
-
-        <button class="customize-btn" id="customize-btn" aria-haspopup="dialog">🎨 Customize</button>
+<button class="customize-btn" id="customize-btn" aria-haspopup="dialog" aria-label="Customize" title="Customize">
+    <span class="bars"><i></i><i></i><i></i></span>
+</button>
 
         <aside class="drawer" id="drawer" role="dialog" aria-label="Customize new tab" hidden>
             <div class="drawer-head">
@@ -438,6 +928,10 @@
                     <div class="row">
                         <label for="show-clock">Show clock</label>
                         <label class="switch"><input type="checkbox" id="show-clock"><span class="slider"></span></label>
+                    </div>
+                    <div class="row">
+                        <label for="hide-splash">Disable startup animation</label>
+                        <label class="switch"><input type="checkbox" id="hide-splash"><span class="slider"></span></label>
                     </div>
                 </section>
                 <section>

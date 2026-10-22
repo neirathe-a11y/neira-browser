@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Neira splash</title>
+<style>
+  :root {
+    --bg: #14171d;
+    --badge: #222b3e;
+    --ring: #cfe5f0;
+    --dot: #4f9fe3;
+    box-sizing: border-box;
+  }
+  /* Made background transparent so the window has no edges */
+  html, body { 
+      height: 100%; 
+      margin: 0; 
+      background: transparent; 
+      overflow: hidden; 
+  }
+  body { 
+      display: grid; 
+      place-items: center; 
+  }
+  
+  /* Added a subtle dark circular background to frame the logo */
+  #stage {
+      width: 520px;
+      height: 520px;
+      display: grid;
+      place-items: center;
+      background: radial-gradient(circle, rgba(20, 23, 29, 0.8) 0%, rgba(20, 23, 29, 0) 70%);
+      border-radius: 50%;
+  }
+
+  svg#logo { width: min(78vmin, 520px); height: auto; overflow: visible; }
+
+  #badge { transform-origin: 200px 200px; opacity: 0; }
+  .orbit { fill: none; stroke: var(--ring); stroke-width: 14; stroke-dasharray: 1; stroke-dashoffset: 1; transform-origin: 200px 200px; }
+  #weave { opacity: 0; }
+  #dot { transform-origin: 200px 200px; transform: scale(0); }
+  #ripple { fill: none; stroke: var(--dot); stroke-width: 2; opacity: 0; transform-origin: 200px 200px; }
+  .sphere { opacity: 0; }
+
+  .play #badge  { animation: badgein .8s cubic-bezier(.2,.8,.2,1) forwards; }
+  .play .o0 { animation: draw 1.2s cubic-bezier(.65,0,.25,1) .5s forwards,  settle 1.4s cubic-bezier(.2,.8,.2,1) .5s backwards; --from: -70deg; }
+  .play .o1 { animation: draw 1.2s cubic-bezier(.65,0,.25,1) .8s forwards,  settle 1.4s cubic-bezier(.2,.8,.2,1) .8s backwards; --from: 90deg; }
+  .play .o2 { animation: draw 1.2s cubic-bezier(.65,0,.25,1) 1.1s forwards, settle 1.4s cubic-bezier(.2,.8,.2,1) 1.1s backwards; --from: -110deg; }
+  .play #weave  { animation: fadein .5s ease 2.55s forwards; }
+  .play #dot    { animation: pop .55s cubic-bezier(.3,1.6,.5,1) 3.05s forwards; }
+  .play #ripple { animation: ripple 1.1s ease-out 3.1s; }
+  .play.out #logo { animation: leave .7s ease-in forwards; }
+
+  @keyframes badgein { from { opacity: 0; transform: scale(.86); } to { opacity: 1; transform: none; } }
+  @keyframes draw    { to { stroke-dashoffset: 0; } }
+  @keyframes settle  { from { transform: rotate(var(--from)); } to { transform: rotate(0deg); } }
+  @keyframes fadein  { to { opacity: 1; } }
+  @keyframes pop     { to { transform: scale(1); } }
+  @keyframes ripple  { from { opacity: .6; transform: scale(1); } to { opacity: 0; transform: scale(5.5); } }
+  @keyframes leave   { to { opacity: 0; transform: scale(1.05); } }
+
+  @media (prefers-reduced-motion: reduce) {
+    #badge, #weave, .sphere { opacity: 1; }
+    .orbit { stroke-dashoffset: 0; }
+    #dot { transform: none; }
+    .play #badge, .play .orbit, .play #weave, .play #dot, .play #ripple { animation: none; }
+  }
+</style>
+</head>
+<body>
+<main id="stage" class="play">
+  <svg id="logo" viewBox="0 0 400 400" role="img" aria-label="Neira logo">
+    <defs>
+      <radialGradient id="pearl" cx="35%" cy="30%" r="75%">
+        <stop offset="0" stop-color="#ffffff"/>
+        <stop offset=".45" stop-color="#e1ebfb"/>
+        <stop offset=".8" stop-color="#bccbea"/>
+        <stop offset="1" stop-color="#9db3dc"/>
+      </radialGradient>
+    </defs>
+
+    <g id="badge">
+      <circle cx="200" cy="200" r="170" fill="var(--badge)" stroke="rgba(255,255,255,.09)" stroke-width="1.5" style="filter: drop-shadow(0 10px 18px rgba(0,0,0,.45))"/>
+    </g>
+
+    <g style="filter: drop-shadow(0 2px 2px rgba(0,0,0,.5))">
+      <g transform="rotate(0 200 200)"><ellipse class="orbit o0" cx="200" cy="200" rx="56" ry="118" pathLength="1"/></g>
+      <g transform="rotate(60 200 200)"><ellipse class="orbit o1" cx="200" cy="200" rx="56" ry="118" pathLength="1"/></g>
+      <g transform="rotate(-60 200 200)"><ellipse class="orbit o2" cx="200" cy="200" rx="56" ry="118" pathLength="1"/></g>
+      <g id="weave"></g>
+    </g>
+
+    <circle id="ripple" cx="200" cy="200" r="11"/>
+    <circle id="dot" cx="200" cy="200" r="11" fill="var(--dot)"/>
+
+    <g id="spheres">
+      <g class="sphere" style="filter: drop-shadow(0 3px 3px rgba(0,0,0,.45))"><circle r="19" fill="url(#pearl)"/><circle cx="-6" cy="-7" r="4" fill="#fff" opacity=".7"/></g>
+      <g class="sphere" style="filter: drop-shadow(0 3px 3px rgba(0,0,0,.45))"><circle r="19" fill="url(#pearl)"/><circle cx="-6" cy="-7" r="4" fill="#fff" opacity=".7"/></g>
+      <g class="sphere" style="filter: drop-shadow(0 3px 3px rgba(0,0,0,.45))"><circle r="19" fill="url(#pearl)"/><circle cx="-6" cy="-7" r="4" fill="#fff" opacity=".7"/></g>
+    </g>
+  </svg>
+</main>
+
+<script>
+(function () {
+  var NS = 'http://www.w3.org/2000/svg', C = 200, RX = 56, RY = 118, ANG = [0, 60, -60];
+  var stage = document.getElementById('stage');
+  var weave = document.getElementById('weave');
+  var sphereEls = document.querySelectorAll('.sphere');
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  function pt(i, t) {
+    var a = ANG[i] * Math.PI / 180, x = RX * Math.cos(t), y = RY * Math.sin(t);
+    return [C + x * Math.cos(a) - y * Math.sin(a), C + x * Math.sin(a) + y * Math.cos(a)];
+  }
+  function local(j, p) {
+    var a = -ANG[j] * Math.PI / 180, dx = p[0] - C, dy = p[1] - C;
+    return [dx * Math.cos(a) - dy * Math.sin(a), dx * Math.sin(a) + dy * Math.cos(a)];
+  }
+  function f(j, p) { var q = local(j, p); return (q[0] / RX) * (q[0] / RX) + (q[1] / RY) * (q[1] / RY) - 1; }
+  function tOn(j, p) { var q = local(j, p); return Math.atan2(q[1] / RY, q[0] / RX); }
+
+  function overSegment(i, t) {
+    var speed = Math.sqrt(Math.pow(RX * Math.sin(t), 2) + Math.pow(RY * Math.cos(t), 2));
+    var d = 20 / speed, pts = [], n = 14;
+    for (var k = 0; k <= n; k++) { var p = pt(i, t - d + (2 * d) * k / n); pts.push((k ? 'L' : 'M') + p[0].toFixed(2) + ' ' + p[1].toFixed(2)); }
+    var dAttr = pts.join(' ');
+    [['var(--badge)', 22], ['var(--ring)', 14]].forEach(function (s) {
+      var path = document.createElementNS(NS, 'path');
+      path.setAttribute('d', dAttr); path.setAttribute('fill', 'none');
+      path.setAttribute('stroke', s[0]); path.setAttribute('stroke-width', s[1]);
+      weave.appendChild(path);
+    });
+  }
+  function buildWeave() {
+    var N = 1440;
+    for (var i = 0; i < 3; i++) for (var j = i + 1; j < 3; j++) {
+      var k = 0, prev = f(j, pt(i, 0));
+      for (var s = 1; s <= N; s++) {
+        var t0 = (s - 1) / N * 2 * Math.PI, t1 = s / N * 2 * Math.PI, cur = f(j, pt(i, t1));
+        if (prev * cur < 0) {
+          var t = t0 + (t1 - t0) * Math.abs(prev) / (Math.abs(prev) + Math.abs(cur));
+          if (k % 2 === 0) overSegment(i, t); else overSegment(j, tOn(j, pt(i, t)));
+          k++;
+        }
+        prev = cur;
+      }
+    }
+  }
+  buildWeave();
+
+  var plan = [{ i: 0, t: -Math.PI / 2, delay: 1700 }, { i: 1, t: Math.PI / 2, delay: 1950 }, { i: 2, t: Math.PI / 2, delay: 2200 }];
+  var DUR = 1200, raf, start;
+
+  function place(el, i, t, s) {
+    var p = pt(i, t);
+    el.setAttribute('transform', 'translate(' + p[0].toFixed(2) + ' ' + p[1].toFixed(2) + ') scale(' + s.toFixed(3) + ')');
+  }
+  function frame(now) {
+    if (!start) start = now;
+    var el = now - start, running = false;
+    plan.forEach(function (sp, n) {
+      var p = Math.min(Math.max((el - sp.delay) / DUR, 0), 1);
+      if (p < 1) running = true;
+      var e = 1 - Math.pow(1 - p, 3);
+      sphereEls[n].style.opacity = p > 0 ? 1 : 0;
+      place(sphereEls[n], sp.i, sp.t - (1 - e) * Math.PI * 1.5, e);
+    });
+    if (running) raf = requestAnimationFrame(frame);
+  }
+  function startSpheres() {
+    cancelAnimationFrame(raf); start = 0;
+    if (reduced) { plan.forEach(function (sp, n) { sphereEls[n].style.opacity = 1; place(sphereEls[n], sp.i, sp.t, 1); }); return; }
+    plan.forEach(function (sp, n) { sphereEls[n].style.opacity = 0; place(sphereEls[n], sp.i, sp.t, 0); });
+    raf = requestAnimationFrame(frame);
+  }
+
+  var timer, timer2;
+  function play() {
+    clearTimeout(timer); clearTimeout(timer2);
+    stage.className = ''; void stage.offsetWidth; stage.className = 'play';
+    startSpheres();
+    
+    // Hold the finished logo, fade out, then tell the app it can show its UI.
+    timer = setTimeout(function () {
+      stage.classList.add('out');
+      timer2 = setTimeout(function () {
+        window.dispatchEvent(new Event('neira:splash-done'));
+      }, 750);
+    }, 5600);
+  }
+  
+  play();
+})();
+</script>
+</body>
+</html>

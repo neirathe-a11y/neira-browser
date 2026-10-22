@@ -168,12 +168,15 @@
         return url;
     }
 
-    function resolveInput(raw) {
+        function resolveInput(raw) {
         const s = String(raw || '').trim();
         if (!s) return null;
-        if (/^neira:\/\//i.test(s)) return toInternalSrc(s);
+        if (s === 'neira://newtab') return NEWTAB_URL;
+        if (s.startsWith('neira://')) return toInternalSrc(s);
         if (/^about:blank$/i.test(s)) return 'about:blank';
         if (/^https?:\/\//i.test(s)) return s;
+        if (s.startsWith('file:///')) return s;
+        
         const hostLike = /^(localhost|(\d{1,3}\.){3}\d{1,3}|([a-z0-9-]+\.)+[a-z]{2,})(:\d+)?([/?#]\S*)?$/i;
         if (!/\s/.test(s) && hostLike.test(s)) {
             const local = /^(localhost|(\d{1,3}\.){3}\d{1,3})(:|\/|$)/i.test(s);
@@ -485,11 +488,14 @@
             renderRail();
         };
 
-        wv.addEventListener('did-start-loading', () => setLoading(true));
-                wv.addEventListener('new-window', e => {
-            e.preventDefault();
-            createTab(e.url, { activate: false });
-        });
+                wv.addEventListener('did-start-loading', () => setLoading(true));
+        
+        wv.addEventListener('ipc-message', (e) => {
+            if (e.channel === 'neira-open-tab') {
+                const url = e.args[0];
+                if (url) createTab(url, { activate: false });
+            }
+        });    
                wv.addEventListener('did-stop-loading', () => {
             setLoading(false);
             if (tab.titleEl.textContent === 'Loading…') {
@@ -504,7 +510,15 @@
            wv.addEventListener('dom-ready', () => {
     const firstReady = !tab.ready;
     tab.ready = true;
-    if (firstReady && tab.isNewtab && tab.id === activeId) wv.focus();
+        if (firstReady && tab.isNewtab && tab.id === activeId) {
+        try {
+            wv.focus();
+            setTimeout(() => wv.executeJavaScript('document.getElementById("q")?.focus()').catch(() => {}), 50);
+        } catch (_) {}
+
+        wv.focus();
+        setTimeout(() => wv.executeJavaScript('document.getElementById("q")?.focus()').catch(() => {}), 50);
+    }
     try { wv.setZoomFactor(tab.zoom); } catch (_) {}
     tab.darkKey = null;
     if (tab.forceDark) applyDark(tab);
@@ -969,7 +983,9 @@ wv.addEventListener('did-fail-load', e => {
             if (t.ready) { try { t.webview.stopFindInPage('clearSelection'); } catch (_) { /* ignore */ } }
         }
         const tab = activeTab();
-        if (refocus && tab) tab.webview.focus();
+        if (refocus && tab)         setTimeout(() => {
+            try { if (tab.webview) tab.webview.focus(); } catch (_) {}
+        }, 50);
     }
 
     function renderBookmarks() {
@@ -4168,11 +4184,16 @@ try {
             m.classList.toggle('no-anim', c.animate === false);
         }
     }
-        function applyUi() {
-        window.neiraTheme.apply(settings);
-        window.neiraTheme.persist(settings);
-        applyContextMenuStyle();
-    }
+                function applyUi() {
+            window.neiraTheme.apply(settings);
+            window.neiraTheme.persist(settings);
+            applyContextMenuStyle();
+            const toggle = $('sidebar-toggle');
+            if (toggle) {
+                toggle.textContent = settings.sidebarCollapsed ? '»' : '«';
+                toggle.title = settings.sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar';
+            }
+        }
 
     const HINTS = {
         'new-tab-btn': ['New tab', 'new_tab'],
@@ -4536,6 +4557,29 @@ on('downloads-btn', 'click', dlToggle);
 
     async function init() {
         bindWindowControls();
+                // --- NEIRA PULSE MONITOR ---
+        if (api.onSystemPulse) {
+            const pulseEl = $('pulse-monitor');
+            const cpuEl = $('pulse-cpu');
+            const ramEl = $('pulse-ram');
+            
+            api.onSystemPulse((stats) => {
+                const cpuPct = Math.round(stats.load * 100);
+                const ramPct = Math.round(stats.memUsedPercent);
+                
+                if (cpuEl) cpuEl.textContent = cpuPct + '%';
+                if (ramEl) ramEl.textContent = ramPct + '%';
+                
+                if (pulseEl) {
+                    // If CPU is over 80% or RAM is over 90%, turn the monitor red
+                    if (cpuPct > 80 || ramPct > 90) {
+                        pulseEl.classList.add('high-load');
+                    } else {
+                        pulseEl.classList.remove('high-load');
+                    }
+                }
+            });
+        }
 
         if (PRIVATE) $('private-badge').hidden = false;
         try {
@@ -4573,10 +4617,14 @@ on('downloads-btn', 'click', dlToggle);
     });
 }
         api.onSummarizeText(text => runSummary(text && text.trim() ? text : null));
-               api.onOpenUrl((url, opts) => {
+                       api.onOpenUrl((url, opts) => {
             // a link/file that launched Neira replaces the empty start tab instead of sitting next to it
             const startTab = opts && opts.replaceStartTab && tabs.length === 1 && tabs[0].isNewtab ? tabs[0] : null;
-            createTab(url, { activate: !(opts && opts.background), resolved: /^file:/i.test(url) });
+            
+            // Popups (like "Sign in" buttons) should switch to the new tab immediately
+            const isPopup = !(opts && opts.background);
+            
+            createTab(url, { activate: isPopup, resolved: /^file:/i.test(url) });
             if (startTab) closeTab(startTab.id);
         });
         api.settings.onChange(next => { settings = next; applyUi(); renderBookmarks(); syncAISheet(); });

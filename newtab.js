@@ -537,6 +537,9 @@
     }
 
     function syncDrawerControls() {
+        if ($('hide-splash')) {
+            $('hide-splash').checked = settings.hideSplash === true;
+        }
         if ($('dim')) {
             $('dim').value = String(settings.wallpaperDim || 0);
             $('dim-out').textContent = (settings.wallpaperDim || 0) + '%';
@@ -584,6 +587,11 @@
         $('blur').addEventListener('change', e => api.settings.set('wallpaperBlur', Number(e.target.value)));
     }
     if ($('show-clock')) $('show-clock').addEventListener('change', e => api.settings.set('showClock', e.target.checked));
+
+if ($('hide-splash')) {
+    $('hide-splash').checked = settings.hideSplash === true;
+    $('hide-splash').addEventListener('change', e => api.settings.set('hideSplash', e.target.checked));
+}
 
     // -------------------------------------------------------------------
     // Boot

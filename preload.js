@@ -1,5 +1,13 @@
 'use strict';
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webFrame } = require('electron');
+
+// Inject the extension browser-action API so the <browser-action-list> works
+try {
+    const { injectBrowserAction } = require('electron-chrome-extensions/dist/browser-action');
+    injectBrowserAction();
+} catch (err) {
+    console.error('Could not inject browser action:', err);
+}
 
 const invoke = (channel, ...args) => ipcRenderer.invoke(channel, ...args);
 const send = (channel, ...args) => ipcRenderer.send(channel, ...args);
@@ -12,11 +20,12 @@ const on = channel => callback => {
 };
 
 contextBridge.exposeInMainWorld('neira', {
+    onSystemPulse: on('system:pulse'),
     copyImageAt: (wcId, x, y) => invoke('page:copy-image-at', wcId, x, y),
-downloadURL: (wcId, url) => invoke('page:download-url', wcId, url),
+    downloadURL: (wcId, url) => invoke('page:download-url', wcId, url),
     confirm: message => invoke('dialog:confirm', message),
     
-        rendererReady: () => send('renderer:ready'),
+    rendererReady: () => send('renderer:ready'),
     defaultBrowser: {
         status: () => invoke('defaultbrowser:status'),
         set: () => invoke('defaultbrowser:set')
@@ -41,9 +50,10 @@ downloadURL: (wcId, url) => invoke('page:download-url', wcId, url),
 
     onAction: on('shortcut:action'),
     onOpenUrl: on('open-url'),
+    
     onModifierReleased: on('shortcut:modifier-released'),
     onOpenInput: on('open-input'),
-        onPagePointer: on('page:pointer'),
+    onPagePointer: on('page:pointer'),
     onSummarizeText: on('assistant:summarize'),
     screenshot: webContentsId => invoke('page:screenshot', webContentsId),
 
@@ -109,19 +119,19 @@ downloadURL: (wcId, url) => invoke('page:download-url', wcId, url),
         switch: id => invoke('profiles:switch', id),
         onChange: on('profiles:changed')
     },
-  permissions: {
-    list: () => ipcRenderer.invoke('permissions:list'),
-    clear: () => ipcRenderer.invoke('permissions:clear'),
-    listDetailed: () => ipcRenderer.invoke('permissions:listDetailed'),
-    setFor: (o, p, a) => ipcRenderer.invoke('permissions:setFor', o, p, a),
-    removeFor: (o, p) => ipcRenderer.invoke('permissions:removeFor', o, p),
-    removeOrigin: o => ipcRenderer.invoke('permissions:removeOrigin', o),
-    onChanged: cb => {
-        const h = () => cb();
-        ipcRenderer.on('permissions:changed', h);
-        return () => ipcRenderer.removeListener('permissions:changed', h);
-    }
-},
+    permissions: {
+        list: () => ipcRenderer.invoke('permissions:list'),
+        clear: () => ipcRenderer.invoke('permissions:clear'),
+        listDetailed: () => ipcRenderer.invoke('permissions:listDetailed'),
+        setFor: (o, p, a) => ipcRenderer.invoke('permissions:setFor', o, p, a),
+        removeFor: (o, p) => ipcRenderer.invoke('permissions:removeFor', o, p),
+        removeOrigin: o => ipcRenderer.invoke('permissions:removeOrigin', o),
+        onChanged: cb => {
+            const h = () => cb();
+            ipcRenderer.on('permissions:changed', h);
+            return () => ipcRenderer.removeListener('permissions:changed', h);
+        }
+    },
     downloads: {
         get: () => invoke('downloads:get'),
         open: id => invoke('downloads:open', id),
@@ -163,20 +173,17 @@ downloadURL: (wcId, url) => invoke('page:download-url', wcId, url),
         onChange: on('extensions:changed')
     },
 
-    // ---------- Neira Sweep ----------
     sweep: {
         scan: () => invoke('sweep:scan'),
         run: (categories, level) => invoke('sweep:run', categories, level)
     },
 
-    // ---------- Import from another browser ----------
-      importer: {
+    importer: {
         detect: () => invoke('importer:detect'),
         scan: (browserId, profileId) => invoke('importer:scan', browserId, profileId),
         run: (browserId, profileId, items) => invoke('importer:run', browserId, profileId, items),
         markSeen: () => invoke('importer:mark-seen'),
         openWizard: () => send('importer:open-wizard')
     },
-        onImporterShowWizard: on('importer:show-wizard'),
-    
+    onImporterShowWizard: on('importer:show-wizard'),
 });

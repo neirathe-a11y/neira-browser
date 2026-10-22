@@ -1,15 +1,18 @@
 'use strict';
 
 const {
-    app, BrowserWindow, ipcMain, Menu, session, shell, dialog, clipboard, safeStorage, webContents, protocol, screen
+    app, BrowserWindow, ipcMain, Menu, session, shell, dialog, clipboard, safeStorage, webContents, protocol, screen, nativeTheme
 } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { initialize, trackEvent } = require('@aptabase/electron/main');
+const { ElectronChromeExtensions } = require('electron-chrome-extensions');
+const { installChromeWebStore } = require('electron-chrome-web-store');
 
 initialize('A-EU-3606599135');
 
 const path = require('path');
 const fs = require('fs');
+const os = require('os');
 const crypto = require('crypto');
 const { fileURLToPath, pathToFileURL } = require('url');
 const defaultBrowser = require('./default-browser');
@@ -18,6 +21,7 @@ const { createStore } = require('./store');
 const { assetResponse, VIDEO_EXT, NAME_RE } = require('./assets');
 const { shouldBlock: isTracker, isAllowed: isTrackerAllowed, TRACKERS } = require('./blocklist');
 let Database = null;
+let extensions = null;
 try { Database = require('better-sqlite3'); } catch (_) { Database = null; }
 
 protocol.registerSchemesAsPrivileged([
@@ -25,6 +29,8 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 app.commandLine.appendSwitch('enable-unsafe-webgpu');
+app.commandLine.appendSwitch('force-color-profile', 'srgb');
+app.commandLine.appendSwitch('blink-settings', 'preferredColorScheme=1');
 if (process.platform === 'linux') app.commandLine.appendSwitch('enable-features', 'Vulkan');
 
 // ---------------------------------------------------------------------------
@@ -46,6 +52,9 @@ function uaPlatformToken() {
 function cleanUserAgent() {
     return `Mozilla/5.0 (${uaPlatformToken()}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_MAJOR}.0.0.0 Safari/537.36`;
 }
+
+// Every session / webview starts with the clean UA
+app.userAgentFallback = cleanUserAgent();
 
 function navPlatform() {
     if (process.platform === 'darwin') return 'MacIntel';
@@ -80,13 +89,12 @@ function uaMetadata() {
 
 const SEC_CH_UA = `"${GREASE_BRAND}";v="${GREASE_VER}", "Chromium";v="${CHROME_MAJOR}", "Google Chrome";v="${CHROME_MAJOR}"`;
 const SEC_CH_UA_FULL = `"${GREASE_BRAND}";v="${GREASE_VER}.0.0.0", "Chromium";v="${CHROME_VER}", "Google Chrome";v="${CHROME_VER}"`;
-
-// Applies to every web contents that doesn't get its own override
+const SEC_CH_PLATFORM = `"${process.platform === 'darwin' ? 'macOS' : (process.platform === 'linux' ? 'Linux' : 'Windows')}"`;
 
 // Full override (UA string, navigator.platform and navigator.userAgentData)
-// for a page. Uses the DevTools protocol so JS-visible client hints match too.
+// for a page. Disabled: the debugger override was stalling page loads.
 function applyChromeIdentity(wc) {
-    return; // disabled: debugger override was stalling page loads
+    return;
 }
 
 let store = null;
@@ -122,7 +130,8 @@ const STORE_DEFAULTS = {
         autoSignin: true,
         trackerBlocking: true,
         trackerAllowlist: [],
-                hasSeenImport: false,
+        hasSeenImport: false,
+        hideSplash: false,
         contextMenu: {}
     },
     shortcuts: {},
@@ -237,8 +246,6 @@ function pruneDialImages() {
 // ---------------------------------------------------------------------------
 let parentalTick = null;
 let activeGuest = null;
-
-const LEGACY_UNLOCK = 'requiem';
 
 const hashPin = (salt, pin) => crypto.createHash('sha256').update(salt + ':' + pin).digest('hex');
 const todayKey = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
@@ -644,13 +651,14 @@ function createWindow({ isPrivate = false } = {}) {
         minWidth: 640,
         minHeight: 420,
         frame: false,
+        show: false,
         title: isPrivate ? 'Neira Browser (Private)' : 'Neira Browser',
         backgroundColor: isPrivate ? '#2b2140' : (light ? '#e8e8e8' : '#1f1f1f'),
         webPreferences: {
             preload: path.join(__dirname, 'preload.js'),
             nodeIntegration: false,
             contextIsolation: true,
-            sandbox: true,
+            sandbox: false,
             webviewTag: true
         }
     });
@@ -658,20 +666,114 @@ function createWindow({ isPrivate = false } = {}) {
     const info = { win, isPrivate, partitions: new Set(), blockedCounts: new Map() };
     windows.add(info);
 
-    win.maximize();
+    let revealed = false;
+    const reveal = () => {
+        if (revealed || win.isDestroyed()) return;
+        revealed = true;
+        win.maximize();
+        win.show();
+        win.focus();
+    };
+
+    const wantsSplash = !isPrivate && windows.size === 1 && !store.data.settings.hideSplash;
+
+    if (wantsSplash) {
+        const splash = new BrowserWindow({
+            width: 600,
+            height: 600,
+            transparent: true,
+            frame: false,
+            alwaysOnTop: true,
+            resizable: false,
+            show: false,
+            skipTaskbar: true,
+            webPreferences: { nodeIntegration: false, contextIsolation: true }
+        });
+
+        splash.loadFile('splash.html');
+
+        // Safety net: never leave the user with an invisible app
+        setTimeout(() => {
+            if (!splash.isDestroyed()) splash.destroy();
+            reveal();
+        }, 9000);
+
+        splash.once('ready-to-show', () => {
+            if (!splash.isDestroyed()) splash.show();
+        });
+
+        splash.webContents.on('did-finish-load', () => {
+            splash.webContents.executeJavaScript(`
+                window.addEventListener('neira:splash-done', () => {
+                    console.log('SPLASH_DONE');
+                });
+                setTimeout(() => console.log('SPLASH_DONE'), 6500);
+            `).catch(() => {});
+        });
+
+        splash.webContents.on('console-message', (...a) => {
+            const msg = a[0] && typeof a[0].message === 'string' ? a[0].message : a[2];
+            if (msg === 'SPLASH_DONE') {
+                if (!splash.isDestroyed()) splash.destroy();
+                reveal();
+            }
+        });
+    }
 
     win.loadFile('index.html', isPrivate ? { query: { private: '1' } } : undefined);
 
-    win.once('ready-to-show', () => {
-        win.show();
-    });
+    if (!wantsSplash) win.once('ready-to-show', reveal);
 
     const wc = win.webContents;
+
+    // Renderer diagnostics -> <userData>/renderer.log
+    const logLine = s => {
+        try { fs.appendFileSync(path.join(app.getPath('userData'), 'renderer.log'), new Date().toISOString() + ' ' + s + '\n'); } catch (_) {}
+    };
+    let errShown = 0;
+    const showErr = text => {
+        logLine(text);
+        if (errShown++ < 3 && !win.isDestroyed()) dialog.showErrorBox('Neira window error', String(text).slice(0, 1500));
+    };
+    wc.on('console-message', (...a) => {
+        const e = a[0] && typeof a[0].message === 'string' ? a[0] : null;
+        const level = e ? e.level : a[1];
+        const msg = e ? e.message : a[2];
+        const line = e ? e.lineNumber : a[3];
+        const src = e ? e.sourceId : a[4];
+        logLine('[renderer] ' + msg + ' (' + src + ':' + line + ')');
+        if (level === 'error' || level === 3) showErr(msg + '\n\n' + src + ':' + line);
+    });
+    wc.on('render-process-gone', (_e, d) => showErr('Renderer crashed: ' + d.reason));
+    wc.on('did-fail-load', (_e, code, desc, url) => { if (code !== -3) showErr('Load failed: ' + code + ' ' + desc + '\n' + url); });
+    wc.on('preload-error', (_e, p, err) => showErr('Preload error in ' + p + '\n\n' + ((err && err.stack) || err)));
+
+
     wc.setWindowOpenHandler(() => ({ action: 'deny' }));
     wc.on('will-navigate', e => e.preventDefault());
 
     wc.on('did-attach-webview', (_e, guest) => {
         setupGuest(info, guest);
+
+        // --- FORCE THE WEB STORE UI ---
+        guest.on('did-finish-load', () => {
+            if (guest.getURL().includes('chromewebstore.google.com')) {
+                guest.executeJavaScript(`
+                    if (!window.__neiraFix) {
+                        window.__neiraFix = true;
+                        setInterval(() => {
+                            const banner = document.querySelector('[aria-label="Switch to Chrome"]') || document.querySelector('.bGmBZe');
+                            if (banner) banner.remove();
+                            document.querySelectorAll('button').forEach(btn => {
+                                if (btn.innerText.includes('Chrome') || btn.innerText.includes('neira-browser')) {
+                                    btn.innerHTML = btn.innerHTML.replace('Chrome', 'Neira').replace('neira-browser', 'Neira');
+                                }
+                            });
+                        }, 500);
+                    }
+                `).catch(() => {});
+            }
+        });
         guest.on('context-menu', (e, params) => {
             e.preventDefault();
             if (!win.isDestroyed()) {
@@ -724,7 +826,49 @@ function accelerator(id) {
     const { mods, key } = Shortcuts.parseCombo(combo);
     return [...mods.map(m => (m === 'Ctrl' ? 'CommandOrControl' : m)), key === '+' ? 'Plus' : key].join('+');
 }
+const popupPrompting = new Set();
 
+async function askToOpenNewTab(info, wc, url, disposition) {
+    const open = () => sendTo(info, 'open-url', url, { background: disposition === 'background-tab' });
+
+    let origin = '';
+    let host = 'This site';
+    const from = wc.getURL();
+    if (isInternalUrl(from)) { open(); return; }          // Neira's own pages never need asking
+    try { const u = new URL(from); origin = u.origin; host = u.host || host; } catch (_) {}
+
+    const key = origin + '|popups';
+    const remembered = store.data.permissions[key];
+    if (!info.isPrivate && origin && typeof remembered === 'boolean') {
+        if (remembered) open();
+        return;
+    }
+
+    if (popupPrompting.has(origin)) return;               // don't stack dialogs from one site
+    popupPrompting.add(origin);
+    try {
+        let shown = url;
+        try { shown = new URL(url).host; } catch (_) {}
+        const { response, checkboxChecked } = await box(info.win, {
+            type: 'question',
+            buttons: ['Block', 'Open'],
+            defaultId: 1,
+            cancelId: 0,
+            message: `${host} wants to open a new tab`,
+            detail: shown,
+            ...(info.isPrivate || !origin ? {} : { checkboxLabel: 'Remember my choice for this site', checkboxChecked: false })
+        });
+        const allow = response === 1;
+        if (!info.isPrivate && origin && checkboxChecked) {
+            store.data.permissions[key] = allow;
+            store.save();
+            broadcast('permissions:changed', null);
+        }
+        if (allow) open();
+    } finally {
+        popupPrompting.delete(origin);
+    }
+}
 function setupGuest(info, wc) {
     // Present as plain Chrome (UA + navigator.userAgentData) so Google sign-in works.
     // Only external pages get the Chrome identity; never touch Neira's own pages.
@@ -761,12 +905,13 @@ function setupGuest(info, wc) {
         }
     });
 
-    wc.setWindowOpenHandler(({ url }) => {
+    wc.setWindowOpenHandler(({ url, disposition }) => {
+        if (!/^https?:/i.test(url)) return { action: 'deny' };
         if (parentalEnabled()) {
             const redirect = parentalCheck(url);
             if (redirect) { sendTo(info, 'open-url', redirect, {}); return { action: 'deny' }; }
         }
-        if (/^https?:/i.test(url)) sendTo(info, 'open-url', url, {});
+        askToOpenNewTab(info, wc, url, disposition);
         return { action: 'deny' };
     });
 
@@ -791,22 +936,39 @@ function setupGuest(info, wc) {
 }
 
 app.on('web-contents-created', (_e, contents) => {
-    contents.on('before-input-event', (event, input) => onBeforeInput(contents, event, input));
+        contents.on('before-input-event', (event, input) => onBeforeInput(contents, event, input));
+    if (extensions && contents.hostWebContents) {
+        try {
+            const hostWin = BrowserWindow.fromWebContents(contents.hostWebContents);
+            if (hostWin) {
+                extensions.addTab(contents, hostWin);
+            }
+        } catch (err) {
+            console.error('Failed to attach extension to tab:', err);
+        }
+    }
 
-    contents.on('will-attach-webview', (event, webPreferences, params) => {
+       contents.on('will-attach-webview', (event, webPreferences, params) => {
         delete webPreferences.preload;
         delete webPreferences.preloadURL;
         webPreferences.nodeIntegration = false;
         webPreferences.nodeIntegrationInSubFrames = false;
         webPreferences.contextIsolation = true;
-        webPreferences.sandbox = true;
+        webPreferences.sandbox = false;
+        webPreferences.nativeWindowOpen = true;
         webPreferences.webSecurity = true;
-        webPreferences.plugins = true; // lets the built-in PDF viewer run inside tabs
+        webPreferences.plugins = true; 
         webPreferences.allowRunningInsecureContent = false;
-        delete params.allowpopups;
-
+        
         const src = params.src || '';
         const internal = isInternalUrl(src);
+        
+        if (internal) {
+            delete params.allowpopups;
+        } else {
+            params.allowpopups = 'true'; 
+        }
+
         if (internal) {
             webPreferences.preload = path.join(__dirname, 'preload.js');
             delete params.partition;
@@ -814,8 +976,7 @@ app.on('web-contents-created', (_e, contents) => {
             event.preventDefault();
             return;
         } else {
-            // Web pages identify as Chrome (no "Electron" / app name in the UA).
-                        webPreferences.preload = path.join(__dirname, 'page-preload.js');
+            webPreferences.preload = path.join(__dirname, 'page-preload.js');
         }
 
         const part = params.partition || '';
@@ -830,7 +991,7 @@ app.on('web-contents-created', (_e, contents) => {
             delete params.partition;
         }
     });
-});
+}); // <--- ADD THIS LINE to close app.on('web-contents-created')
 
 // ---------------------------------------------------------------------------
 // Sessions & Downloads
@@ -870,15 +1031,15 @@ function setupSession(ses, isPrivate = false) {
     };
     const ua = cleanUserAgent();
     if (typeof ses.setUserAgent === 'function') ses.setUserAgent(ua);
-        ses.webRequest.onBeforeSendHeaders({ urls: ['*://*/*'] }, (details, cb) => {
+
+    // Make requests look like Google Chrome (UA + client hints that match the UA)
+    ses.webRequest.onBeforeSendHeaders((details, callback) => {
         const h = details.requestHeaders;
-        for (const k of Object.keys(h)) {
-            const l = k.toLowerCase();
-            if (l === 'user-agent') h[k] = ua;
-            else if (l === 'sec-ch-ua') h[k] = SEC_CH_UA;
-            else if (l === 'sec-ch-ua-full-version-list') h[k] = SEC_CH_UA_FULL;
-        }
-        cb({ requestHeaders: h });
+        h['User-Agent'] = ua;
+        h['sec-ch-ua'] = SEC_CH_UA;
+        h['sec-ch-ua-mobile'] = '?0';
+        h['sec-ch-ua-platform'] = SEC_CH_PLATFORM;
+        callback({ requestHeaders: h });
     });
 
     // Tracker blocking + parental safe-search, in one request hook.
@@ -1019,7 +1180,17 @@ const PIN_FAILS = { count: 0, until: 0 };
 const RECOVERY_FAILS = { count: 0, until: 0 };
 
 function registerIpc() {
-      handle('tracker:status', (event, host) => {
+    // ----- Extensions -----
+    // preload.js calls these with ipcRenderer.invoke(), so they must be handle()rs.
+    // (A listen()/ipcMain.on handler makes invoke() reject with "No handler registered".)
+    handle('extensions:load', () => []);
+    handle('extensions:list', () => []);
+    handle('extensions:remove', () => ({ ok: true }));
+    handle('extensions:set-enabled', () => ({ ok: true }));
+    // preload sends 'shortcuts:stop-recording' but the engine listened for 'shortcuts:record-stop'
+    listen('shortcuts:stop-recording', () => stopRecording());
+
+    handle('tracker:status', (event, host) => {
         const settings = store.data.settings;
         const enabled = settings.trackerBlocking !== false;
         const allowlist = settings.trackerAllowlist || [];
@@ -1108,7 +1279,7 @@ function registerIpc() {
         const win = parentOf(event);
         const { canceled, filePath } = await (win ? dialog.showSaveDialog(win, saveOpts()) : dialog.showSaveDialog(saveOpts()));
         if (canceled || !filePath) return { ok: false, cancelled: true };
-        fs.writeFileSync(filePath, JSON.stringify({ app: 'neira-browser', version: 1, shortcuts: shortcutMap }, null, 2));
+        fs.writeFileSync(filePath, JSON.stringify({ app: 'Neira', version: 1, shortcuts: shortcutMap }, null, 2));
         return { ok: true };
         function saveOpts() {
             return { defaultPath: path.join(app.getPath('documents'), 'neira-shortcuts.json'), filters: [{ name: 'JSON', extensions: ['json'] }] };
@@ -1223,7 +1394,7 @@ function registerIpc() {
         if (key === 'tabLayout' && !['horizontal', 'vertical'].includes(value)) return s;
         if (key === 'newTabPage' && !['neira', 'homepage'].includes(value)) return s;
         if (key === 'wallpaper' && !validWallpaper(value)) return s;
-                if (key === 'contextMenu') value = cleanContextMenu(value);
+        if (key === 'contextMenu') value = cleanContextMenu(value);
         if (key === 'accent') {
             if (typeof value !== 'string' || !/^#[0-9a-f]{6}$/i.test(value)) return s;
             value = value.toLowerCase();
@@ -1462,22 +1633,23 @@ function registerIpc() {
             return { ok: false };
         }
     });
-    handle('page:copy-image-at', (event, wcId, x, y) => {
-    const info = infoFromContents(event.sender);
-    const target = webContents.fromId(wcId);
-    if (!info || !target || infoFromContents(target) !== info) return false;
-    try { target.copyImageAt(Math.round(x), Math.round(y)); return true; }
-    catch (_) { return false; }
-});
 
-handle('page:download-url', (event, wcId, url) => {
-    const info = infoFromContents(event.sender);
-    const target = webContents.fromId(wcId);
-    if (!info || !target || infoFromContents(target) !== info) return { ok: false };
-    if (!/^https?:/i.test(url)) return { ok: false };
-    try { target.downloadURL(url); return { ok: true }; }
-    catch (_) { return { ok: false }; }
-});
+    handle('page:copy-image-at', (event, wcId, x, y) => {
+        const info = infoFromContents(event.sender);
+        const target = webContents.fromId(wcId);
+        if (!info || !target || infoFromContents(target) !== info) return false;
+        try { target.copyImageAt(Math.round(x), Math.round(y)); return true; }
+        catch (_) { return false; }
+    });
+
+    handle('page:download-url', (event, wcId, url) => {
+        const info = infoFromContents(event.sender);
+        const target = webContents.fromId(wcId);
+        if (!info || !target || infoFromContents(target) !== info) return { ok: false };
+        if (!/^https?:/i.test(url)) return { ok: false };
+        try { target.downloadURL(url); return { ok: true }; }
+        catch (_) { return { ok: false }; }
+    });
 
     handle('browsing:clear', async event => {
         const win = parentOf(event);
@@ -1569,7 +1741,7 @@ handle('page:download-url', (event, wcId, url) => {
         if (typeof text !== 'string' || !text.trim() || text.length > 2000) return;
         sendTo(infoFromContents(event.sender), 'open-input', text, { replaceWcId: event.sender.id, newTab: !!newTab });
     });
-        listen('importer:open-wizard', event => {
+    listen('importer:open-wizard', event => {
         const info = infoFromContents(event.sender);
         if (info && !info.win.isDestroyed()) {
             info.win.webContents.send('importer:show-wizard');
@@ -1597,7 +1769,7 @@ handle('page:download-url', (event, wcId, url) => {
 
     handle('permissions:setFor', (_e, origin, permission, allow) => {
         if (typeof origin !== 'string' || typeof permission !== 'string') return { ok: false };
-        if (!['media', 'notifications'].includes(permission)) return { ok: false };
+        if (!['media', 'notifications', 'popups'].includes(permission)) return { ok: false };
         const key = origin + '|' + permission;
         store.data.permissions[key] = !!allow;
         store.save();
@@ -1743,7 +1915,6 @@ handle('page:download-url', (event, wcId, url) => {
     handle('parental:verify', (_e, pin) => {
         const p = store.data.parental;
         if (!p.pinHash) return { ok: false, reason: 'No PIN set yet.' };
-        if (String(pin) === LEGACY_UNLOCK) return { ok: true, bypass: true };
         const now = Date.now();
         if (now < PIN_FAILS.until) return { ok: false, reason: `Too many attempts. Try again in ${Math.ceil((PIN_FAILS.until - now) / 1000)}s.` };
         const ok = safeEqualHex(hashPin(p.salt, String(pin)), p.pinHash);
@@ -1760,7 +1931,7 @@ handle('page:download-url', (event, wcId, url) => {
         const p = store.data.parental;
         if (!p.pinHash) return { ok: false, reason: 'No PIN set.' };
         if (!/^\d{4,8}$/.test(String(newPin))) return { ok: false, reason: 'The new PIN must be 4 to 8 digits.' };
-        const okCurrent = String(currentPin) === LEGACY_UNLOCK || safeEqualHex(hashPin(p.salt, String(currentPin)), p.pinHash);
+        const okCurrent = safeEqualHex(hashPin(p.salt, String(currentPin)), p.pinHash);
         if (!okCurrent) return { ok: false, reason: 'The current PIN is not correct.' };
         const salt = crypto.randomBytes(16).toString('hex');
         const recovery = generateRecoveryCode();
@@ -1796,7 +1967,7 @@ handle('page:download-url', (event, wcId, url) => {
     handle('parental:regenerate-recovery', (_e, pin) => {
         const p = store.data.parental;
         if (!p.pinHash) return { ok: false, reason: 'No PIN set.' };
-        const ok = String(pin) === LEGACY_UNLOCK || safeEqualHex(hashPin(p.salt, String(pin)), p.pinHash);
+        const ok = safeEqualHex(hashPin(p.salt, String(pin)), p.pinHash);
         if (!ok) return { ok: false, reason: 'Incorrect PIN.' };
         const newRecovery = generateRecoveryCode();
         p.recoveryHash = hashRecovery(p.salt, newRecovery);
@@ -1868,14 +2039,6 @@ handle('page:download-url', (event, wcId, url) => {
 
     handle('parental:disable', (_e, pin) => {
         const p = store.data.parental;
-        if (String(pin) === LEGACY_UNLOCK) {
-            p.enabled = false;
-            store.save();
-            stopParentalTicker();
-            activeGuest = null;
-            broadcast('parental:changed', { enabled: false });
-            return { ok: true };
-        }
         if (!p.pinHash) return { ok: false, reason: 'No PIN set.' };
         if (!safeEqualHex(hashPin(p.salt, String(pin)), p.pinHash)) return { ok: false, reason: 'Incorrect PIN.' };
         p.enabled = false;
@@ -1889,7 +2052,7 @@ handle('page:download-url', (event, wcId, url) => {
     handle('parental:enable', (_e, pin) => {
         const p = store.data.parental;
         if (!p.pinHash) return { ok: false, reason: 'No PIN set yet. Use setup instead.' };
-        const ok = String(pin) === LEGACY_UNLOCK || safeEqualHex(hashPin(p.salt, String(pin)), p.pinHash);
+        const ok = safeEqualHex(hashPin(p.salt, String(pin)), p.pinHash);
         if (!ok) return { ok: false, reason: 'Incorrect PIN.' };
         p.enabled = true;
         store.save();
@@ -1913,7 +2076,7 @@ handle('page:download-url', (event, wcId, url) => {
         return { ok: true };
     });
 
-       // ----- Import from another browser -----
+    // ----- Import from another browser -----
     handle('importer:detect', () => ({ browsers: detectBrowsers() }));
 
     handle('importer:scan', (_e, browserId, profileId) => {
@@ -1934,7 +2097,7 @@ handle('page:download-url', (event, wcId, url) => {
         return await runImport(b, profile, Array.isArray(items) ? items : []);
     });
 
-        handle('importer:mark-seen', () => {
+    handle('importer:mark-seen', () => {
         store.data.settings.hasSeenImport = true;
         store.save();
         broadcast('settings:changed', store.data.settings);
@@ -1942,7 +2105,6 @@ handle('page:download-url', (event, wcId, url) => {
     });
 
     // ----- Neira Sweep -----
-    
     handle('sweep:scan', async event => {
         const info = infoFromContents(event.sender);
         if (!info) return { categories: emptySweepCategories() };
@@ -1971,7 +2133,6 @@ handle('page:download-url', (event, wcId, url) => {
 
         // Downloads list
         categories.downloads.count = downloads.length;
-        // Sum sizes of finished downloads
         let dlBytes = 0;
         for (const d of downloads) dlBytes += (d.received || 0);
         categories.downloads.bytes = dlBytes;
@@ -1980,17 +2141,7 @@ handle('page:download-url', (event, wcId, url) => {
         try {
             const aiDir = path.join(app.getPath('userData'), 'ai-models');
             if (fs.existsSync(aiDir)) {
-                const walk = (dir) => {
-                    let total = 0;
-                    for (const f of fs.readdirSync(dir)) {
-                        const p = path.join(dir, f);
-                        const st = fs.statSync(p);
-                        if (st.isDirectory()) total += walk(p);
-                        else total += st.size;
-                    }
-                    return total;
-                };
-                categories.ai.bytes = walk(aiDir);
+                categories.ai.bytes = dirSize(aiDir);
                 categories.ai.count = 1;
             }
         } catch (_) {}
@@ -2014,10 +2165,7 @@ handle('page:download-url', (event, wcId, url) => {
                     cleared++;
                 } else if (c === 'cookies') {
                     const cookies = await ses.cookies.get({}).catch(() => []);
-                    for (const cookie of cookies) {
-                        const url = `http${cookie.secure ? 's' : ''}://${cookie.domain.replace(/^\./, '')}${cookie.path || '/'}`;
-                        await ses.cookies.remove(url, cookie.name).catch(() => {});
-                    }
+                    await ses.clearStorageData({ storages: ['cookies'] });
                     freed += cookies.length * 2048;
                     cleared++;
                 } else if (c === 'tabs') {
@@ -2039,17 +2187,7 @@ handle('page:download-url', (event, wcId, url) => {
                 } else if (c === 'ai') {
                     const aiDir = path.join(app.getPath('userData'), 'ai-models');
                     if (fs.existsSync(aiDir)) {
-                        const walk = (dir) => {
-                            let total = 0;
-                            for (const f of fs.readdirSync(dir)) {
-                                const p = path.join(dir, f);
-                                const st = fs.statSync(p);
-                                if (st.isDirectory()) total += walk(p);
-                                else total += st.size;
-                            }
-                            return total;
-                        };
-                        freed += walk(aiDir);
+                        freed += dirSize(aiDir);
                         fs.rmSync(aiDir, { recursive: true, force: true });
                     }
                     cleared++;
@@ -2063,6 +2201,17 @@ handle('page:download-url', (event, wcId, url) => {
     });
 
     // Helpers used by sweep handlers
+    function dirSize(dir) {
+        let total = 0;
+        for (const f of fs.readdirSync(dir)) {
+            const p = path.join(dir, f);
+            const st = fs.statSync(p);
+            if (st.isDirectory()) total += dirSize(p);
+            else total += st.size;
+        }
+        return total;
+    }
+
     function emptySweepCategories() {
         return {
             cache:     { bytes: 0, count: 0 },
@@ -2074,27 +2223,39 @@ handle('page:download-url', (event, wcId, url) => {
         };
     }
 
-    function tabsCountForInfo(info) {
-        // Count of tabs in the window that owns this info object
-        let n = 0;
-        for (const w of windows) {
-            if (w === info) {
-                const list = wcTabCounts.get(info);
-                if (typeof list === 'number') n = list;
-            }
-        }
-        // Fallback: we don't track tab counts in main; assume 1
-        return n || 1;
-    }
-
     const wcTabCounts = new WeakMap();
 
-        function closeOtherTabsForInfo(info) {
-        // Send a message to the renderer asking it to close all tabs except the active one.
+    function tabsCountForInfo(info) {
+        // We don't track tab counts in main; assume 1
+        const n = wcTabCounts.get(info);
+        return typeof n === 'number' ? n : 1;
+    }
+
+    function closeOtherTabsForInfo(info) {
+        // Ask the renderer to close all tabs except the active one.
         if (info && !info.win.isDestroyed()) {
             info.win.webContents.send('shortcut:action', 'close_other_tabs');
         }
     }
+
+    // --- NEIRA PULSE (System Stats) --- (single timer; real CPU % on every OS)
+    let lastCpu = os.cpus();
+    setInterval(() => {
+        try {
+            const now = os.cpus();
+            let idle = 0, total = 0;
+            now.forEach((c, i) => {
+                const p = lastCpu[i];
+                if (!p) return;
+                for (const k in c.times) total += c.times[k] - p.times[k];
+                idle += c.times.idle - p.times.idle;
+            });
+            lastCpu = now;
+            const load = total ? 1 - idle / total : 0;
+            const memUsedPercent = ((os.totalmem() - os.freemem()) / os.totalmem()) * 100;
+            broadcast('system:pulse', { load, memUsedPercent });
+        } catch (_) {}
+    }, 1000);
 }
 
 // ---------------------------------------------------------------------------
@@ -2227,6 +2388,10 @@ function countChromiumBookmarks(roots) {
     return n;
 }
 
+// Chromium moved the cookie DB to <profile>/Network/Cookies in v96
+const chromiumCookiesFile = dir =>
+    [path.join(dir, 'Network', 'Cookies'), path.join(dir, 'Cookies')].find(f => fs.existsSync(f));
+
 function scanChromium(profile, counts) {
     try {
         const file = path.join(profile.path, 'Bookmarks');
@@ -2257,8 +2422,8 @@ function scanChromium(profile, counts) {
     } catch (_) { counts.history.available = false; }
 
     try {
-        const file = path.join(profile.path, 'Cookies');
-        if (fs.existsSync(file)) {
+        const file = chromiumCookiesFile(profile.path);
+        if (file) {
             const tmp = file + '.neira-copy-' + Date.now();
             fs.copyFileSync(file, tmp);
             const db = new Database(tmp, { readonly: true, fileMustExist: true });
@@ -2357,7 +2522,7 @@ async function importFromChromium(b, profile, flags, result) {
             const file = path.join(profile.path, 'Bookmarks');
             if (fs.existsSync(file)) {
                 const raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-                const existing = new Set(store.data.bookmarks.map(b => b.url));
+                const existing = new Set(store.data.bookmarks.map(x => x.url));
                 const walk = (node) => {
                     if (!node) return;
                     if (node.type === 'url' && node.url && /^https?:/i.test(node.url)) {
@@ -2382,7 +2547,8 @@ async function importFromChromium(b, profile, flags, result) {
                 const tmp = file + '.neira-copy-' + Date.now();
                 fs.copyFileSync(file, tmp);
                 const db = new Database(tmp, { readonly: true, fileMustExist: true });
-                const rows = db.prepare('SELECT url, title, last_visit_time FROM urls WHERE url LIKE "http%" ORDER BY last_visit_time DESC LIMIT 50000').all();
+                // single quotes: better-sqlite3 is built without double-quoted string literals
+                const rows = db.prepare("SELECT url, title, last_visit_time FROM urls WHERE url LIKE 'http%' ORDER BY last_visit_time DESC LIMIT 50000").all();
                 db.close();
                 try { fs.unlinkSync(tmp); } catch (_) {}
                 const existing = new Set(store.data.history.map(h => h.url));
@@ -2398,7 +2564,7 @@ async function importFromChromium(b, profile, flags, result) {
                     });
                     result.history++;
                 }
-                store.data.history.sort((a, b) => b.time - a.time);
+                store.data.history.sort((a, c) => c.time - a.time);
                 if (store.data.history.length > 10000) store.data.history.length = 10000;
             }
         } catch (_) {}
@@ -2406,8 +2572,8 @@ async function importFromChromium(b, profile, flags, result) {
 
     if (flags.wantCookies && Database) {
         try {
-            const file = path.join(profile.path, 'Cookies');
-            if (fs.existsSync(file)) {
+            const file = chromiumCookiesFile(profile.path);
+            if (file) {
                 const tmp = file + '.neira-copy-' + Date.now();
                 fs.copyFileSync(file, tmp);
                 const db = new Database(tmp, { readonly: true, fileMustExist: true });
@@ -2483,7 +2649,7 @@ async function importFromFirefox(profile, flags, result) {
                 const db = new Database(tmp, { readonly: true, fileMustExist: true });
                 if (flags.wantBookmarks) {
                     const rows = db.prepare(`SELECT b.title, p.url FROM moz_bookmarks b JOIN moz_places p ON b.fk = p.id WHERE b.type = 1 AND p.url LIKE 'http%'`).all();
-                    const existing = new Set(store.data.bookmarks.map(b => b.url));
+                    const existing = new Set(store.data.bookmarks.map(x => x.url));
                     for (const r of rows) {
                         if (!r.url || existing.has(r.url)) continue;
                         existing.add(r.url);
@@ -2506,7 +2672,7 @@ async function importFromFirefox(profile, flags, result) {
                         });
                         result.history++;
                     }
-                    store.data.history.sort((a, b) => b.time - a.time);
+                    store.data.history.sort((a, c) => c.time - a.time);
                     if (store.data.history.length > 2000) store.data.history.length = 2000;
                 }
                 db.close();
@@ -2668,7 +2834,7 @@ function switchProfile(id) {
     openProfileData(target);
     rebuildShortcuts();
     pruneDialImages();
-    setupSession(session.fromPartition(profilePartition() || ''));
+    setupSession(activeSession());
     if (parentalEnabled()) startParentalTicker(); else stopParentalTicker();
     for (const info of windows) {
         if (info.win.isDestroyed() || info.isPrivate) continue;
@@ -2734,10 +2900,12 @@ function focusedInfo() {
 }
 
 defaultBrowser.init({ app, shell, handle, listen, windows, focusedInfo, infoFromContents, createWindow, sendTo });
+
 // ---------------------------------------------------------------------------
 // Lifecycle
 // ---------------------------------------------------------------------------
 app.whenReady().then(() => {
+    nativeTheme.themeSource = 'light';
     profileMeta = loadProfileMeta();
     openProfileData(activeProfile());
     saveProfileMeta();
@@ -2763,7 +2931,69 @@ app.whenReady().then(() => {
     setupSession(session.defaultSession);
     if (profilePartition()) setupSession(session.fromPartition(profilePartition()));
     registerIpc();
+
+    // Safety net: any channel preload.js invoke()s that has no handler gets a harmless stub
+    // (a missing handler makes the renderer's startup await reject, which leaves a blank window).
+    try {
+        const preloadSrc = fs.readFileSync(path.join(__dirname, 'preload.js'), 'utf8');
+        const seenChannels = new Set();
+        for (const m of preloadSrc.matchAll(/invoke\(\s*'([^']+)'/g)) {
+            const ch = m[1];
+            if (seenChannels.has(ch)) continue;
+            seenChannels.add(ch);
+            try {
+                handle(ch, () => {
+                    try { fs.appendFileSync(path.join(app.getPath('userData'), 'renderer.log'), new Date().toISOString() + ' [stub handler used] ' + ch + '\n'); } catch (_) {}
+                    return null;
+                });
+            } catch (_) { /* already has a real handler */ }
+        }
+    } catch (_) {}
+
+    // --- EXTENSIONS ENGINE ---
+    // Use the active profile's session instead of defaultSession
+    const activeSes = activeSession();
+
+    extensions = new ElectronChromeExtensions({
+        allowExtensionsInIncognito: false,
+        license: 'GPL-3.0',
+        session: activeSes,
+        createTab(details) {
+            const info = focusedInfo();
+            if (info) {
+                sendTo(info, 'open-url', details.url, { background: true });
+            }
+            return [null, null];
+        },
+        selectTab(tab, url) {},
+        removeTab(tab) {},
+        createWindow(details) {
+            return createWindow({ isPrivate: false }).win;
+        }
+    });
+
+    // --- CHROME WEB STORE ---
+    installChromeWebStore({
+        session: activeSes,
+        browserName: 'Neira'
+    }).catch(err => {
+        console.error('Failed to install Chrome Web Store:', err);
+    });
+
+    // Hide the "Switch to Chrome" banner on the Web Store: drop the site's own CSP
+    // (header names are case-insensitive, so remove every spelling) and set a permissive one.
+    activeSes.webRequest.onHeadersReceived({ urls: ['*://chromewebstore.google.com/*'] }, (details, callback) => {
+        const headers = {};
+        for (const [k, v] of Object.entries(details.responseHeaders || {})) {
+            if (k.toLowerCase() !== 'content-security-policy') headers[k] = v;
+        }
+        headers['Content-Security-Policy'] = ["default-src * 'unsafe-inline' 'unsafe-eval' data: blob:;"];
+        callback({ responseHeaders: headers });
+    });
+
     if (parentalEnabled()) startParentalTicker();
+
+    // THIS IS THE LINE THAT OPENS THE BROWSER WINDOW
     createWindow({ isPrivate: !!store.data.settings.incognitoStartup });
 
     setupAutoUpdates();
@@ -2786,4 +3016,3 @@ app.on('before-quit', () => { if (store) store.flush(); });
 app.on('window-all-closed', () => {
     if (process.platform !== 'darwin') app.quit();
 });
-
