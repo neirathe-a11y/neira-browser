@@ -1,7 +1,7 @@
 'use strict';
 
 const {
-    app, BrowserWindow, ipcMain, Menu, session, shell, dialog, clipboard, safeStorage, webContents, protocol, screen, nativeTheme
+    app, BrowserWindow, ipcMain, Menu, session, shell, dialog, clipboard, safeStorage, webContents, protocol, screen, nativeTheme, net
 } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { initialize, trackEvent } = require('@aptabase/electron/main');
@@ -122,8 +122,9 @@ const STORE_DEFAULTS = {
         wallpaperBlur: 0,
         accent: '#6366f1',
         accentTint: 'off',
-        localAI: false,
+               localAI: false,
         localAIModel: 'balanced',
+        groqAI: true, 
         showClock: true,
         offerSave: true,
         offerPasskey: true,
@@ -1241,6 +1242,90 @@ function registerIpc() {
         if (info) info.blockedCounts = new Map();
         return { ok: true };
     });
+// ----- Groq (cloud AI; the key never leaves the main process) -----
+const GROQ_MODELS = ['openai/gpt-oss-20b', 'openai/gpt-oss-120b'];
+const groqKeyFile = () => path.join(app.getPath('userData'), 'groq-key.bin');
+const groqStreams = new Map();
+function readGroqKey() {
+    try { return decrypt(fs.readFileSync(groqKeyFile(), 'utf8')); } catch (_) { /* no saved key */ }
+    return process.env.GROQ_API_KEY || '';
+}
+const clampNum = (v, min, max, dflt) => (Number.isFinite(Number(v)) ? Math.max(min, Math.min(max, Number(v))) : dflt);
+
+handle('groq:status', () => ({ hasKey: !!readGroqKey(), encrypted: safeStorage.isEncryptionAvailable() }));
+
+handle('groq:set-key', (_e, key) => {
+    key = String(key || '').trim();
+    if (!/^gsk_[A-Za-z0-9]{20,100}$/.test(key)) return { ok: false, reason: 'That does not look like a Groq key (it starts with gsk_).' };
+    fs.writeFileSync(groqKeyFile(), encrypt(key), { mode: 0o600 });
+    return { ok: true };
+});
+
+handle('groq:clear-key', () => { fs.rmSync(groqKeyFile(), { force: true }); return { ok: true }; });
+
+listen('groq:abort', (_e, id) => { const c = groqStreams.get(id); if (c) c.abort(); });
+
+handle('groq:chat', async (event, id, req) => {
+    const key = readGroqKey();
+    if (!key) return { ok: false, code: 'no_key', message: 'Add your Groq API key first.' };
+    const messages = Array.isArray(req && req.messages)
+        ? req.messages.filter(m => m && ['system', 'user', 'assistant'].includes(m.role) && typeof m.content === 'string')
+        : [];
+    if (!messages.length) return { ok: false, code: 'bad_request', message: 'No messages to send.' };
+
+    const model = req.model || GROQ_MODELS[0];
+    const ctl = new AbortController();
+    groqStreams.set(id, ctl);
+    const sender = event.sender;
+    try {
+        // Use Electron's net.fetch instead of Node's fetch to avoid proxy/VPN "fetch failed" errors
+        const res = await net.fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: { Authorization: 'Bearer ' + key, 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                model, messages, stream: true,
+                temperature: clampNum(req.temperature, 0, 2, 0.2),
+                max_tokens: clampNum(req.max_tokens, 64, 4096, 1024)
+            }),
+            signal: ctl.signal
+        });
+        if (!res.ok) {
+            let msg = '';
+            try { const j = await res.json(); msg = (j.error && j.error.message) || ''; } catch (_) {}
+            const code = res.status === 401 ? 'bad_key' : res.status === 429 ? 'rate_limit' : 'http_error';
+            return { ok: false, code, status: res.status, message: msg || `Groq returned HTTP ${res.status}.` };
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buf = '';
+        let finishReason = '';
+        for (;;) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buf += decoder.decode(value, { stream: true });
+            let nl;
+            while ((nl = buf.indexOf('\n')) >= 0) {
+                const line = buf.slice(0, nl).trim();
+                buf = buf.slice(nl + 1);
+                if (!line.startsWith('data:')) continue;
+                const data = line.slice(5).trim();
+                if (data === '[DONE]') continue;
+                try {
+                    const choice = JSON.parse(data).choices[0];
+                    const chunk = choice.delta && choice.delta.content;
+                    if (chunk && !sender.isDestroyed()) sender.send('groq:token', id, chunk);
+                    if (choice.finish_reason) finishReason = choice.finish_reason;
+                } catch (_) { /* partial or keep-alive line */ }
+            }
+        }
+        return { ok: true, finishReason };
+    } catch (e) {
+        if (ctl.signal.aborted) return { ok: false, code: 'aborted' };
+        return { ok: false, code: 'network', message: String((e && e.message) || e).slice(0, 160) };
+    } finally {
+        groqStreams.delete(id);
+    }
+});
 
     // ----- Shortcuts -----
     handle('shortcuts:get', () => ({

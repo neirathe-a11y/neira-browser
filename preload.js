@@ -185,5 +185,19 @@ contextBridge.exposeInMainWorld('neira', {
         markSeen: () => invoke('importer:mark-seen'),
         openWizard: () => send('importer:open-wizard')
     },
-    onImporterShowWizard: on('importer:show-wizard'),
+     onImporterShowWizard: on('importer:show-wizard'),
+});
+
+// ---- Groq AI bridge (separate global so it doesn't clash with `neira`) ----
+contextBridge.exposeInMainWorld('neiraGroq', {
+    status:   () => ipcRenderer.invoke('groq:status'),
+    setKey:   k => ipcRenderer.invoke('groq:set-key', k),
+    clearKey: () => ipcRenderer.invoke('groq:clear-key'),
+    chat:     (id, req) => ipcRenderer.invoke('groq:chat', id, req),
+    abort:    id => ipcRenderer.send('groq:abort', id),
+    onToken:  cb => {
+        const f = (_e, id, chunk) => cb(id, chunk);
+        ipcRenderer.on('groq:token', f);
+        return () => ipcRenderer.removeListener('groq:token', f);
+    }
 });

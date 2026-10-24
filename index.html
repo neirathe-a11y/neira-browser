@@ -2717,7 +2717,14 @@
             <span class="rail-label">More</span>
         </button>
     </aside>
+        </aside>
+    </div>          <!-- closes .main-row -->
 
+    </div>          <!-- closes .shell -->
+
+    </div>          <!-- closes .app-body -->
+
+    <div class="dropdown" id="dropdown" role="menu" hidden></div>
     <div class="app-body">
 
     <div class="tab-bar">
@@ -2838,32 +2845,16 @@
                 <button class="nav-btn" id="find-close" title="Close">✕</button>
             </div>
         </div>
-
         <aside class="assistant" id="assistant" hidden aria-label="Assistant">
             <div class="assistant-head">
                 <span class="as-title"><span class="as-logo">✨</span> NEIRA ASSISTANT</span>
                 <div class="as-head-actions">
-                    <button class="nav-btn" id="assistant-settings" title="Local AI settings" aria-expanded="false">⚙</button>
+                    <!-- The gear button is removed here -->
                     <button class="nav-btn" id="assistant-clear" title="Clear conversation">🗑</button>
                     <button class="nav-btn" id="assistant-close" title="Close">✕</button>
                 </div>
             </div>
-            <div class="as-sheet" id="as-sheet" hidden>
-                <label class="as-row">
-                    <span><strong>LOCAL AI CORE</strong><small>AI-written summaries and answers that run privately on this computer’s graphics card.</small></span>
-                    <input type="checkbox" id="ai-enable" aria-label="Local AI">
-                </label>
-                <label class="as-row stacked">
-                    <span><strong>NEURAL MODEL</strong></span>
-                    <select id="ai-model" aria-label="Local AI model"></select>
-                </label>
-                <div class="as-status" id="ai-status" role="status"></div>
-                <div class="as-bar" id="ai-bar" hidden><div class="as-bar-fill" id="ai-bar-fill"></div></div>
-                <div class="as-btns">
-                    <button class="secondary-btn" id="ai-download" type="button" hidden>INITIALIZE DOWNLOAD</button>
-                    <button class="secondary-btn" id="ai-remove" type="button" hidden>PURGE MODEL DATA</button>
-                </div>
-            </div>
+            
             <div class="assistant-body" id="assistant-body">
                 <div class="as-empty" id="as-empty">
                     <span class="as-logo">✨</span>
@@ -2876,6 +2867,7 @@
                 </div>
                 <div id="assistant-out" aria-live="polite"></div>
             </div>
+            
             <div class="assistant-foot">
                 <div class="seg" id="length-seg" role="radiogroup" aria-label="Summary length">
                     <button type="button" data-len="brief" role="radio" aria-checked="false">BRIEF</button>
@@ -2890,16 +2882,13 @@
                     <button class="primary-btn" id="summarize-btn">✨ SUMMARISE PAGE</button>
                     <button class="secondary-btn" id="summarize-sel-btn" title="Summarise selected text">SELECTION</button>
                 </div>
-                <div class="assistant-note">ZERO-CLOUD EXECUTION // GPU HARDWARE ACCELERATED</div>
+                <div class="assistant-note" id="ai-note">CLOUD AI // PAGE TEXT IS SENT SECURELY</div>
             </div>
         </aside>
     </div>
 
     </div>
 
-    </div>
-
-    
     <div class="dropdown" id="dropdown" role="menu" hidden></div>
         <div class="tracker-pop" id="tracker-pop" role="dialog" aria-label="Tracker blocker" hidden></div>
     <div class="profile-pop" id="profile-pop" role="dialog" aria-label="Profiles" hidden></div>

@@ -886,6 +886,62 @@
             if (typeof f !== 'function') throw aiError('unsupported', 'This environment has no fetch(), so the AI mode cannot run.');
             return f.call(root, url, init);
         };
+        const GROQ_DEFAULTS = Object.freeze({ model: 'openai/gpt-oss-20b', num_ctx: 8192, temperature: 0.2, num_predict: 1024 });
+
+function createGroqClient(options) {
+    const cfg = Object.assign({}, GROQ_DEFAULTS, options || {});
+    let current = null;
+
+    async function chat(args) {
+        const { messages, onToken, onDone, signal, model, options: gen } = args || {};
+        if (!Array.isArray(messages) || !messages.length) throw aiError('bad_request', 'No messages to send to the model.');
+        const bridge = root.neiraGroq;
+        if (!bridge) throw aiError('unsupported', 'The Groq bridge is missing (preload.js was not updated).');
+
+        if (current) current.abort();
+        const id = 'g' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
+        const abort = () => bridge.abort(id);
+        const state = { abort };
+        current = state;
+        let full = '';
+        const off = bridge.onToken((rid, chunk) => { if (rid === id) { full += chunk; if (onToken) onToken(chunk); } });
+        if (signal) { if (signal.aborted) abort(); else signal.addEventListener('abort', abort, { once: true }); }
+
+        try {
+            const r = await bridge.chat(id, {
+                messages,
+                model: model || cfg.model,
+                temperature: gen && gen.temperature !== undefined ? gen.temperature : cfg.temperature,
+                max_tokens: gen && gen.num_predict !== undefined ? gen.num_predict : cfg.num_predict
+            });
+            if (!r.ok) {
+                if (r.code === 'aborted') throw aiError('aborted', 'Generation cancelled.', { partial: full });
+                const msg = { no_key: 'Add your Groq API key first.', bad_key: 'Groq rejected the API key.', rate_limit: 'Groq is rate-limiting you. Wait a few seconds and try again.' }[r.code] || r.message || 'Groq request failed.';
+                throw aiError(r.code || 'http_error', msg, { partial: full, status: r.status });
+            }
+            if (onDone) onDone(full, { done_reason: r.finishReason === 'length' ? 'length' : 'stop' });
+            return full;
+        } catch (e) {
+            if (e && e.name === 'NeiraAIError') { e.partial = full; throw e; }
+            throw aiError('network', 'Groq request failed: ' + clean(e && e.message).slice(0, 160), { partial: full });
+        } finally {
+            off();
+            if (signal) signal.removeEventListener('abort', abort);
+            if (current === state) current = null;
+        }
+    }
+
+    const abort = () => { if (current) current.abort(); };
+    const isStreaming = () => current !== null;
+    const getConfig = () => ({ baseUrl: 'groq', model: cfg.model, num_ctx: cfg.num_ctx, temperature: cfg.temperature, num_predict: cfg.num_predict });
+    async function ping() {
+        try {
+            const s = await root.neiraGroq.status();
+            return s.hasKey ? { available: true, modelInstalled: true, models: [cfg.model] } : { available: false, reason: 'no_key' };
+        } catch (_) { return { available: false, reason: 'unsupported' }; }
+    }
+    return { chat, abort, isStreaming, ping, getConfig };
+}
 
         // A failed fetch() looks the same whether Ollama is off or the browser blocked the request (CORS).
         // A "no-cors" probe tells them apart: it only fails when nothing is listening.
@@ -1068,7 +1124,8 @@
         return { words, minutes: Math.max(1, Math.round(words / 220)), links: d.counts.links, images: d.counts.images, kind: classify(d) };
     }
 
-    const getClient = options => options.client || createOllamaClient(options.ollama || options);
+    const getClient = options => options.client
+    || (options.provider === 'groq' ? createGroqClient(options.groq || options) : createOllamaClient(options.ollama || options));
 
     // Keeps the prompt inside num_ctx (Ollama silently drops the START of an over-long prompt, system prompt included).
     function resolveMaxChars(options, client) {
@@ -1175,7 +1232,7 @@
         // existing
         pageContext, collectPage, classify, analyze, summarizeSelection, answer, parseMarkdown, inlineParts, blocksToText, splitSentences, pickTop, trim, wordCount,
         // optional AI mode
-        createOllamaClient, analyzeWithAI, answerWithAI, summarizeSelectionWithAI,
+        createOllamaClient, createGroqClient, analyzeWithAI, answerWithAI, summarizeSelectionWithAI,
         buildPageContext: buildContext, SYSTEM_PROMPT, OLLAMA_DEFAULTS
     };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
