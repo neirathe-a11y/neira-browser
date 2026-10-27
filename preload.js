@@ -36,7 +36,10 @@ contextBridge.exposeInMainWorld('neira', {
     savePage: webContentsId => invoke('page:save', webContentsId),
     clearBrowsingData: () => invoke('browsing:clear'),
     devtools: { showConsole: webContentsId => invoke('devtools:console', webContentsId) },
-
+firstRun: {
+    defaultStatus: () => ipcRenderer.invoke('firstrun:default-status'),
+    defaultRequest: () => ipcRenderer.invoke('firstrun:default-request')
+},
     window: {
         minimize: () => send('window:minimize'),
         maximizeToggle: () => send('window:maximize-toggle'),
@@ -47,6 +50,7 @@ contextBridge.exposeInMainWorld('neira', {
         isMaximized: () => sendSync('window:is-maximized'),
         onMaximized: on('window:maximized')
     },
+        openGoogleLogin: (url) => send('window:google-login', url),
 
     onAction: on('shortcut:action'),
     onOpenUrl: on('open-url'),
@@ -187,7 +191,6 @@ contextBridge.exposeInMainWorld('neira', {
     },
      onImporterShowWizard: on('importer:show-wizard'),
 });
-
 // ---- Groq AI bridge (separate global so it doesn't clash with `neira`) ----
 contextBridge.exposeInMainWorld('neiraGroq', {
     status:   () => ipcRenderer.invoke('groq:status'),
@@ -200,4 +203,5 @@ contextBridge.exposeInMainWorld('neiraGroq', {
         ipcRenderer.on('groq:token', f);
         return () => ipcRenderer.removeListener('groq:token', f);
     }
+    
 });

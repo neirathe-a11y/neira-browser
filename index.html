@@ -2630,6 +2630,12 @@
         .pulse-label { opacity: 0.5; }
         .pulse-divider { width: 1px; height: 12px; background: var(--border-color); }
         .pulse-monitor.high-load .pulse-divider { background: #ef4444; opacity: 0.5; }
+        .iw-swatches { display:flex; flex-wrap:wrap; gap:12px; }
+.iw-swatch { width:38px; height:38px; border-radius:50%; border:3px solid transparent; background:var(--sw); cursor:pointer; }
+.iw-swatch.active { border-color:var(--text-main); }
+.iw-walls { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:10px; }
+.iw-wall { height:76px; border-radius:10px; border:2px solid var(--border-color); background:var(--bg); cursor:pointer; color:#fff; font-weight:700; font-size:11px; display:flex; align-items:flex-end; padding:6px 8px; }
+.iw-wall.active { border-color:var(--accent); }
     </style>
     <link rel="stylesheet" href="assistant-fx.css">
 </head>
@@ -2684,6 +2690,29 @@
                 <p id="iw-result-msg">Here's what we brought over.</p>
                 <div class="iw-stats" id="iw-result-stats"></div>
                 <button class="iw-btn primary" id="iw-done" type="button">Start browsing</button>
+                <div id="iw-theme" style="display:flex;flex-direction:column;min-height:0;flex:1;" hidden>
+    <div class="iw-head">
+        <span class="iw-badge"><span class="dot"></span> Make it yours</span>
+        <h1>Pick your look</h1>
+        <p>Choose an accent color and a wallpaper. You can change them later in Settings.</p>
+    </div>
+    <div class="iw-body">
+        <div class="iw-col"><h2>Accent color</h2><div class="iw-swatches" id="iw-accents"></div></div>
+        <div class="iw-col"><h2>Wallpaper</h2><div class="iw-walls" id="iw-walls"></div></div>
+    </div>
+    <div class="iw-foot">
+        <div class="iw-foot-msg"></div>
+        <button class="iw-btn primary" id="iw-theme-next" type="button">Continue</button>
+    </div>
+</div>
+<div id="iw-default" class="iw-stage" hidden>
+    <h2 id="iw-default-title">Make Neira your default browser?</h2>
+    <p id="iw-default-msg">Links from other apps will open here.</p>
+    <div style="display:flex;gap:10px">
+        <button class="iw-btn ghost" id="iw-default-no" type="button">Not now</button>
+        <button class="iw-btn primary" id="iw-default-yes" type="button">Make default</button>
+    </div>
+</div>
             </div>
         </div>
     </div>
@@ -2881,7 +2910,7 @@
                 <div class="as-btns">
                     <button class="primary-btn" id="summarize-btn">✨ SUMMARISE PAGE</button>
                     <button class="secondary-btn" id="summarize-sel-btn" title="Summarise selected text">SELECTION</button>
-                </div>
+                </div>  
                 <div class="assistant-note" id="ai-note">CLOUD AI // PAGE TEXT IS SENT SECURELY</div>
             </div>
         </aside>

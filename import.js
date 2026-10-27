@@ -25,6 +25,63 @@
     const progressIcon = $('iw-progress-icon');
     const resultMsg = $('iw-result-msg');
     const resultStats = $('iw-result-stats');
+    const viewTheme = $('iw-theme');
+const viewDefault = $('iw-default');
+let firstRun = false;
+
+// Replace with your real wallpaper ids ('none' or 'preset:<name>')
+const WALLPAPERS = [
+    { id: 'preset:neon', name: 'Neon',  bg: 'linear-gradient(135deg,#0a0c14,#00f0ff44,#7000ff66)' },
+    { id: 'none',        name: 'Plain', bg: 'var(--bg-input)' }
+];
+
+function showOnly(view) {
+    for (const v of [viewSetup, viewProgress, viewResult, viewTheme, viewDefault]) v.hidden = v !== view;
+}
+
+async function showTheme() {
+    showOnly(viewTheme);
+    let cur = {};
+    try { cur = await api.settings.get(); } catch (_) {}
+    const accents = $('iw-accents'); accents.replaceChildren();
+    for (const a of window.neiraTheme.ACCENTS) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'iw-swatch' + (a.value === cur.accent ? ' active' : '');
+        b.style.setProperty('--sw', a.value);
+        b.title = a.name;
+        b.addEventListener('click', () => {
+            api.settings.set('accent', a.value);
+            for (const x of accents.children) x.classList.toggle('active', x === b);
+        });
+        accents.appendChild(b);
+    }
+    const walls = $('iw-walls'); walls.replaceChildren();
+    for (const w of WALLPAPERS) {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'iw-wall' + (w.id === cur.wallpaper ? ' active' : '');
+        b.style.setProperty('--bg', w.bg);
+        b.textContent = w.name;
+        b.addEventListener('click', () => {
+            api.settings.set('wallpaper', w.id);
+            for (const x of walls.children) x.classList.toggle('active', x === b);
+        });
+        walls.appendChild(b);
+    }
+}
+
+async function showDefaultPrompt() {
+    let s = null;
+    try { s = await api.firstRun.defaultStatus(); } catch (_) {}
+    if (!s || !s.supported || s.isDefault) { closeOverlay(); return; }
+    showOnly(viewDefault);
+}
+
+async function afterImport() {
+    try { await api.importer.markSeen(); } catch (_) {}
+    if (firstRun) showTheme(); else closeOverlay();
+}
 
     const AVATAR_COLORS = ['#6366f1', '#3b82f6', '#06b6d4', '#10b981', '#f59e0b', '#ef4444', '#ec4899', '#a855f7'];
     const avatarColor = n => AVATAR_COLORS[(String(n).charCodeAt(0) || 0) % AVATAR_COLORS.length];
@@ -241,8 +298,7 @@
     async function runImport() {
         if (!selectedBrowserId || !selectedProfileId || !checkState.size) return;
 
-        viewSetup.hidden = true;
-        viewProgress.hidden = false;
+        showOnly(viewProgress);
         progressIcon.classList.remove('done');
         progressIcon.textContent = '⟳';
         progressFill.style.width = '0%';
@@ -272,8 +328,7 @@
     }
 
     function showResult(r) {
-        viewProgress.hidden = true;
-        viewResult.hidden = false;
+        showOnly(viewResult);
 
         resultStats.replaceChildren();
 
@@ -316,18 +371,28 @@
         document.documentElement.classList.remove('import-open');
     }
 
-    btnSkip.addEventListener('click', closeOverlay);
-    btnImport.addEventListener('click', runImport);
-    btnDone.addEventListener('click', closeOverlay);
+    
+  
+    btnSkip.addEventListener('click', afterImport);
+btnDone.addEventListener('click', afterImport);
+$('iw-theme-next').addEventListener('click', showDefaultPrompt);
+$('iw-default-no').addEventListener('click', closeOverlay);
+$('iw-default-yes').addEventListener('click', async () => {
+    let r = null;
+    try { r = await api.firstRun.defaultRequest(); } catch (_) {}
+    if (r && r.manual) {
+        $('iw-default-title').textContent = 'One more step';
+        $('iw-default-msg').textContent = 'In the Settings window that just opened, choose Neira under “Web browser”.';
+        $('iw-default-yes').hidden = true;
+        $('iw-default-no').textContent = 'Done';
+    } else closeOverlay();
+});
 
-    async function open() {
-        overlay.hidden = false;
-        document.documentElement.classList.add('import-open');
-
-        viewSetup.hidden = false;
-        viewProgress.hidden = true;
-        viewResult.hidden = true;
-
+ async function open(opts) {
+    firstRun = !!(opts && opts.firstRun);
+    overlay.hidden = false;
+    document.documentElement.classList.add('import-open');
+    showOnly(viewSetup);
         try {
             const r = await api.importer.detect();
             browsers = (r && r.browsers) || [];

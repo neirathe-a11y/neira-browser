@@ -20,9 +20,12 @@ const Shortcuts = require('./shortcuts');
 const { createStore } = require('./store');
 const { assetResponse, VIDEO_EXT, NAME_RE } = require('./assets');
 const { shouldBlock: isTracker, isAllowed: isTrackerAllowed, TRACKERS } = require('./blocklist');
-let Database = null;
 let extensions = null;
-try { Database = require('better-sqlite3'); } catch (_) { Database = null; }
+let Database = null, dbTried = false;
+function getDatabase() {
+    if (!dbTried) { dbTried = true; try { Database = require('better-sqlite3'); } catch (_) {} }
+    return Database;
+}
 
 protocol.registerSchemesAsPrivileged([
     { scheme: 'neira-asset', privileges: { standard: true, secure: true, supportFetchAPI: true, stream: true } }
@@ -40,6 +43,7 @@ if (process.platform === 'linux') app.commandLine.appendSwitch('enable-features'
 // ---------------------------------------------------------------------------
 const CHROME_VER = process.versions.chrome;
 const CHROME_MAJOR = CHROME_VER.split('.')[0];
+const UA_MAJOR = CHROME_MAJOR;
 const GREASE_BRAND = 'Not?A_Brand';
 const GREASE_VER = '99';
 
@@ -50,9 +54,8 @@ function uaPlatformToken() {
 }
 
 function cleanUserAgent() {
-    return `Mozilla/5.0 (${uaPlatformToken()}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_MAJOR}.0.0.0 Safari/537.36`;
+    return `Mozilla/5.0 (${uaPlatformToken()}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${UA_MAJOR}.0.0.0 Safari/537.36`;
 }
-
 // Every session / webview starts with the clean UA
 app.userAgentFallback = cleanUserAgent();
 
@@ -87,7 +90,7 @@ function uaMetadata() {
     };
 }
 
-const SEC_CH_UA = `"${GREASE_BRAND}";v="${GREASE_VER}", "Chromium";v="${CHROME_MAJOR}", "Google Chrome";v="${CHROME_MAJOR}"`;
+const SEC_CH_UA = `"${GREASE_BRAND}";v="${GREASE_VER}", "Chromium";v="${UA_MAJOR}", "Google Chrome";v="${UA_MAJOR}"`;
 const SEC_CH_UA_FULL = `"${GREASE_BRAND}";v="${GREASE_VER}.0.0.0", "Chromium";v="${CHROME_VER}", "Google Chrome";v="${CHROME_VER}"`;
 const SEC_CH_PLATFORM = `"${process.platform === 'darwin' ? 'macOS' : (process.platform === 'linux' ? 'Linux' : 'Windows')}"`;
 
@@ -697,28 +700,19 @@ function createWindow({ isPrivate = false } = {}) {
         setTimeout(() => {
             if (!splash.isDestroyed()) splash.destroy();
             reveal();
-        }, 9000);
+        }, 4000);
 
         splash.once('ready-to-show', () => {
             if (!splash.isDestroyed()) splash.show();
         });
-
-        splash.webContents.on('did-finish-load', () => {
-            splash.webContents.executeJavaScript(`
-                window.addEventListener('neira:splash-done', () => {
-                    console.log('SPLASH_DONE');
-                });
-                setTimeout(() => console.log('SPLASH_DONE'), 6500);
-            `).catch(() => {});
-        });
-
-        splash.webContents.on('console-message', (...a) => {
-            const msg = a[0] && typeof a[0].message === 'string' ? a[0].message : a[2];
-            if (msg === 'SPLASH_DONE') {
-                if (!splash.isDestroyed()) splash.destroy();
-                reveal();
-            }
-        });
+let minDone = false, loaded = false;
+const tryReveal = () => {
+    if (!minDone || !loaded) return;
+    if (!splash.isDestroyed()) splash.destroy();
+    reveal();
+};
+setTimeout(() => { minDone = true; tryReveal(); }, 1200);
+win.webContents.once('did-finish-load', () => { loaded = true; tryReveal(); });
     }
 
     win.loadFile('index.html', isPrivate ? { query: { private: '1' } } : undefined);
@@ -830,6 +824,7 @@ function accelerator(id) {
 const popupPrompting = new Set();
 
 async function askToOpenNewTab(info, wc, url, disposition) {
+    for (const k of Object.keys(store.data.permissions)) if (k.endsWith('|popups')) delete store.data.permissions[k];
     const open = () => sendTo(info, 'open-url', url, { background: disposition === 'background-tab' });
 
     let origin = '';
@@ -905,8 +900,8 @@ function setupGuest(info, wc) {
             try { wc.loadURL(redirect).catch(() => {}); } catch (_) {}
         }
     });
-
     wc.setWindowOpenHandler(({ url, disposition }) => {
+        console.log('[window-open]', disposition, url, 'from', wc.getURL());
         if (!/^https?:/i.test(url)) return { action: 'deny' };
         if (parentalEnabled()) {
             const redirect = parentalCheck(url);
@@ -1032,15 +1027,33 @@ function setupSession(ses, isPrivate = false) {
     };
     const ua = cleanUserAgent();
     if (typeof ses.setUserAgent === 'function') ses.setUserAgent(ua);
-
-    // Make requests look like Google Chrome (UA + client hints that match the UA)
-    ses.webRequest.onBeforeSendHeaders((details, callback) => {
-        const h = details.requestHeaders;
-        h['User-Agent'] = ua;
-        h['sec-ch-ua'] = SEC_CH_UA;
-        h['sec-ch-ua-mobile'] = '?0';
-        h['sec-ch-ua-platform'] = SEC_CH_PLATFORM;
-        callback({ requestHeaders: h });
+if (typeof ses.registerPreloadScript === 'function') {
+    ses.registerPreloadScript({ type: 'frame', filePath: path.join(__dirname, 'ua-preload.js') });
+}
+    // Make requests look like a standard Firefox browser (removes Electron/Chrome bot flags)
+       ses.webRequest.onBeforeSendHeaders((details, callback) => {
+    const h = details.requestHeaders;
+    h['User-Agent'] = ua;                 // same string as above, defined earlier in setupSession
+    h['sec-ch-ua'] = SEC_CH_UA;
+    h['sec-ch-ua-mobile'] = '?0';
+    h['sec-ch-ua-platform'] = SEC_CH_PLATFORM;
+    callback({ requestHeaders: h });
+});
+    // Tell Google to use the lighter login flow so it doesn't block the app
+       // --- GOOGLE OAUTH BYPASS ---
+    ses.webRequest.onBeforeRequest({ urls: ['*://accounts.google.com/*'] }, (details, callback) => {
+        let url = details.url;
+        // If it's the standard login flow, force it to the embedded flow
+        if (url.includes('flowName=GlifWebSignIn')) {
+            url = url.replace('flowName=GlifWebSignIn', 'flowName=EmbeddedSignIn');
+            return callback({ redirectURL: url });
+        }
+        // If it's the generic login page, force the OAuth endpoint
+        if (url.includes('ServiceLogin') && !url.includes('flowName')) {
+            url = url.replace('ServiceLogin', 'o/oauth2/auth?client_id=77185425430.apps.googleusercontent.com&redirect_uri=https://www.google.com&response_type=code&scope=email');
+            return callback({ redirectURL: url });
+        }
+        callback({});
     });
 
     // Tracker blocking + parental safe-search, in one request hook.
@@ -1457,12 +1470,49 @@ handle('groq:chat', async (event, id, req) => {
     listen('window:drag-stop', () => { clearInterval(dragTimer); dragTimer = null; });
 
     listen('window:open-url', (event, url) => {
+        
+        if (typeof url !== 'string' || !/^https?:/i.test(url)) return;
+        const from = infoFromContents(event.sender);
+        const created = createWindow({ isPrivate: !!(from && from.isPrivate) });
+        created.win.webContents.once('did-finish-load', () => sendTo(created, 'open-url', url, {}));
+    });
+    listen('window:open-url', (event, url) => {
         if (typeof url !== 'string' || !/^https?:/i.test(url)) return;
         const from = infoFromContents(event.sender);
         const created = createWindow({ isPrivate: !!(from && from.isPrivate) });
         created.win.webContents.once('did-finish-load', () => sendTo(created, 'open-url', url, {}));
     });
 
+    // --- NEW CODE TO ADD RIGHT BELOW ---
+     listen('window:google-login', (event, url) => {
+        const info = infoFromContents(event.sender);
+        if (!info) return;
+        
+        // Force the mobile login URL, which Google doesn't block
+        let mobileUrl = 'https://accounts.google.com/ServiceLogin';
+        if (url) {
+            mobileUrl = url.replace('https://accounts.google.com/', 'https://accounts.google.com/');
+        }
+
+        const authWin = new BrowserWindow({
+            width: 450,
+            height: 700,
+            parent: info.win,
+            modal: true,
+            show: false,
+            webPreferences: {
+                nodeIntegration: false,
+                contextIsolation: true,
+                // Force a mobile User-Agent just for this window
+                userAgent: 'Mozilla/5.0 (Linux; Android 10; SM-G973F) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36'
+            }
+        });
+        
+        authWin.setMenuBarVisibility(false);
+        authWin.loadURL(mobileUrl);
+        authWin.once('ready-to-show', () => authWin.show());
+    });
+    // -----------------------------------
     ipcMain.on('window:is-maximized', event => {
         if (!isInternalUrl(event.sender.getURL())) { event.returnValue = false; return; }
         const info = infoFromContents(event.sender);
@@ -2182,6 +2232,20 @@ handle('groq:chat', async (event, id, req) => {
         return await runImport(b, profile, Array.isArray(items) ? items : []);
     });
 
+    handle('firstrun:default-status', () => ({
+    supported: true,
+    isDefault: app.isDefaultProtocolClient('http') && app.isDefaultProtocolClient('https')
+}));
+handle('firstrun:default-request', async () => {
+    app.setAsDefaultProtocolClient('http');
+    app.setAsDefaultProtocolClient('https');
+    if (process.platform === 'win32') {
+        await shell.openExternal('ms-settings:defaultapps');
+        return { ok: true, manual: true };
+    }
+    return { ok: true, manual: false };
+});
+
     handle('importer:mark-seen', () => {
         store.data.settings.hasSeenImport = true;
         store.save();
@@ -2478,6 +2542,7 @@ const chromiumCookiesFile = dir =>
     [path.join(dir, 'Network', 'Cookies'), path.join(dir, 'Cookies')].find(f => fs.existsSync(f));
 
 function scanChromium(profile, counts) {
+    const Database = getDatabase();
     try {
         const file = path.join(profile.path, 'Bookmarks');
         if (fs.existsSync(file)) {
@@ -2537,6 +2602,7 @@ function scanChromium(profile, counts) {
 }
 
 function scanFirefox(profile, counts) {
+    const Database = getDatabase();
     try {
         const file = path.join(profile.path, 'places.sqlite');
         if (fs.existsSync(file) && Database) {
@@ -2602,6 +2668,7 @@ async function runImport(b, profile, items) {
 }
 
 async function importFromChromium(b, profile, flags, result) {
+    const Database = getDatabase();
     if (flags.wantBookmarks) {
         try {
             const file = path.join(profile.path, 'Bookmarks');
@@ -2724,6 +2791,7 @@ async function importFromChromium(b, profile, flags, result) {
 }
 
 async function importFromFirefox(profile, flags, result) {
+    const Database = getDatabase();
     if (!Database) return;
     if (flags.wantBookmarks || flags.wantHistory) {
         try {
@@ -3058,12 +3126,7 @@ app.whenReady().then(() => {
     });
 
     // --- CHROME WEB STORE ---
-    installChromeWebStore({
-        session: activeSes,
-        browserName: 'Neira'
-    }).catch(err => {
-        console.error('Failed to install Chrome Web Store:', err);
-    });
+    setTimeout(() => installChromeWebStore({ session: activeSes, browserName: 'Neira' }).catch(() => {}), 4000);
 
     // Hide the "Switch to Chrome" banner on the Web Store: drop the site's own CSP
     // (header names are case-insensitive, so remove every spelling) and set a permissive one.
@@ -3091,7 +3154,7 @@ app.whenReady().then(() => {
         });
     }
 });
-
+console.log('Chromium:', process.versions.chrome);
 app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow({ isPrivate: !!store.data.settings.incognitoStartup });
 });

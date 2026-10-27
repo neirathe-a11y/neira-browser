@@ -26,16 +26,115 @@
     // =====================================================================
     // NORMAL MODE
     // =====================================================================
-    const PRESETS = [
-        { value: 'none', label: 'None', cls: 'wp-none' },
-        { value: 'preset:neon', label: 'Neon', cls: 'wp-neon' },
-        { value: 'preset:aurora', label: 'Aurora', cls: 'wp-aurora' },
-        { value: 'preset:midnight', label: 'Midnight', cls: 'wp-midnight' },
-        { value: 'preset:stars', label: 'Stars', cls: 'wp-stars' }
-    ];
+   const PRESETS = [
+    { value: 'none',             label: 'None',      cls: 'wp-none' },
+    { value: 'preset:nebula',    label: 'Nebula',    cls: 'wp-nebula' },
+    { value: 'preset:synthwave', label: 'Synthwave', cls: 'wp-synthwave' },
+    { value: 'preset:borealis',  label: 'Northern',  cls: 'wp-borealis' },
+    { value: 'preset:ocean',     label: 'Ocean',     cls: 'wp-ocean' },
+    { value: 'preset:sunset',    label: 'Sunset',    cls: 'wp-sunset' },
+    { value: 'preset:ember',     label: 'Ember',     cls: 'wp-ember' },
+    { value: 'preset:stars',     label: 'Stars',     cls: 'wp-stars' }
+];
 
-    let settings = { wallpaper: 'preset:neon', wallpaperDim: 35, wallpaperBlur: 0, showClock: true, engine: '' };
-    let dial = [];
+// Old names -> new ones, so anyone who had Neon/Aurora/Midnight saved doesn't get a blank page
+const LEGACY_WALLPAPERS = {
+    'preset:neon': 'preset:nebula',
+    'preset:aurora': 'preset:borealis',
+    'preset:midnight': 'preset:ocean'
+};
+(() => {
+    const css = `
+.wp-nebula {
+    --a1: var(--accent);
+    --a2: hsl(from var(--accent) calc(h + 50) s l);
+    --a3: hsl(from var(--accent) calc(h - 50) s l);
+    background:
+        radial-gradient(ellipse 60% 50% at 18% 22%, color-mix(in srgb, var(--a1) 60%, transparent), transparent 62%),
+        radial-gradient(ellipse 55% 45% at 82% 28%, color-mix(in srgb, var(--a2) 48%, transparent), transparent 62%),
+        radial-gradient(ellipse 70% 55% at 55% 88%, color-mix(in srgb, var(--a3) 55%, transparent), transparent 62%),
+        radial-gradient(ellipse 30% 25% at 70% 60%, color-mix(in srgb, var(--a1) 25%, transparent), transparent 70%),
+        color-mix(in srgb, var(--accent) 8%, #07061a);
+}
+.wp-synthwave {
+    --a1: var(--accent);
+    --a2: hsl(from var(--accent) calc(h + 50) s l);
+    --a3: hsl(from var(--accent) calc(h - 50) s l);
+    background:
+        repeating-linear-gradient(90deg, color-mix(in srgb, var(--a2) 45%, transparent) 0 1px, transparent 1px 70px) bottom / 100% 38% no-repeat,
+        repeating-linear-gradient(0deg,  color-mix(in srgb, var(--a2) 45%, transparent) 0 1px, transparent 1px 34px) bottom / 100% 38% no-repeat,
+        radial-gradient(circle at 50% 62%, color-mix(in srgb, var(--a2) 40%, #fff) 0 9%, var(--a2) 14%, transparent 15%),
+        linear-gradient(180deg,
+            color-mix(in srgb, var(--accent) 10%, #0a0214) 0%,
+            color-mix(in srgb, var(--a3) 35%, #12052a) 38%,
+            color-mix(in srgb, var(--a3) 70%, #1a0838) 58%,
+            var(--a1) 76%,
+            color-mix(in srgb, var(--a2) 70%, #fff) 100%);
+}
+.wp-borealis {
+    --a1: var(--accent);
+    --a2: hsl(from var(--accent) calc(h + 50) s l);
+    --a3: hsl(from var(--accent) calc(h - 50) s l);
+    background:
+        radial-gradient(ellipse 80% 35% at 30% 30%, color-mix(in srgb, var(--a1) 55%, transparent), transparent 70%),
+        radial-gradient(ellipse 70% 30% at 70% 38%, color-mix(in srgb, var(--a2) 45%, transparent), transparent 70%),
+        radial-gradient(ellipse 60% 28% at 50% 22%, color-mix(in srgb, var(--a3) 40%, transparent), transparent 70%),
+        linear-gradient(180deg,
+            color-mix(in srgb, var(--accent) 6%, #020617) 0%,
+            color-mix(in srgb, var(--accent) 12%, #06142b) 60%,
+            color-mix(in srgb, var(--accent) 16%, #0b1f2e) 100%);
+    background-size: 160% 160%, 160% 160%, 160% 160%, 100% 100%;
+    background-position: 0% 0%, 100% 0%, 50% 0%, 0 0;
+    animation: wpBorealis 18s ease-in-out infinite alternate;
+}
+@keyframes wpBorealis {
+    0%   { background-position: 0% 10%,  100% 0%,  40% 0%,  0 0; }
+    100% { background-position: 100% 0%, 0% 12%,  60% 14%, 0 0; }
+}
+.wp-ocean {
+    --a1: var(--accent);
+    --a2: hsl(from var(--accent) calc(h + 50) s l);
+    --a3: hsl(from var(--accent) calc(h - 50) s l);
+    background:
+        radial-gradient(ellipse 60% 45% at 50% -8%, color-mix(in srgb, var(--a2) 42%, transparent), transparent 60%),
+        radial-gradient(ellipse 40% 30% at 15% 75%, color-mix(in srgb, var(--a1) 28%, transparent), transparent 70%),
+        radial-gradient(ellipse 40% 30% at 85% 85%, color-mix(in srgb, var(--a3) 25%, transparent), transparent 70%),
+        linear-gradient(180deg,
+            color-mix(in srgb, var(--accent) 30%, #02121c) 0%,
+            color-mix(in srgb, var(--accent) 18%, #01101a) 45%,
+            color-mix(in srgb, var(--accent) 6%, #010a10) 100%);
+}
+.wp-sunset {
+    --a1: var(--accent);
+    --a2: hsl(from var(--accent) calc(h + 50) s l);
+    --a3: hsl(from var(--accent) calc(h - 50) s l);
+    background:
+        radial-gradient(ellipse 50% 28% at 50% 82%, color-mix(in srgb, var(--a2) 65%, #fff), transparent 70%),
+        linear-gradient(180deg,
+            color-mix(in srgb, var(--accent) 8%, #0c0820) 0%,
+            color-mix(in srgb, var(--a3) 40%, #140c2e) 28%,
+            color-mix(in srgb, var(--a1) 85%, #2a0f4a) 58%,
+            var(--a2) 80%,
+            color-mix(in srgb, var(--a2) 55%, #fff) 100%);
+}
+.wp-ember {
+    --a1: var(--accent);
+    --a2: hsl(from var(--accent) calc(h + 50) s l);
+    --a3: hsl(from var(--accent) calc(h - 50) s l);
+    background:
+        radial-gradient(ellipse 70% 50% at 50% 118%, color-mix(in srgb, var(--a1) 70%, transparent), transparent 62%),
+        radial-gradient(ellipse 45% 35% at 15% 105%, color-mix(in srgb, var(--a3) 42%, transparent), transparent 65%),
+        radial-gradient(ellipse 40% 30% at 88% 100%, color-mix(in srgb, var(--a2) 32%, transparent), transparent 65%),
+        color-mix(in srgb, var(--accent) 6%, #0b0507);
+}
+.thumb[class*="wp-"] { animation: none !important; }
+@media (prefers-reduced-motion: reduce) { .wp-borealis { animation: none; } }
+`;
+    const s = document.createElement('style');
+    s.textContent = css + css.replace(/\.wp-(\w+)\s*\{/g, '#wp-grid .wp-card .thumb.wp-$1 {');
+    document.head.appendChild(s);
+})();
+let settings = { wallpaper: 'preset:nebula', wallpaperDim: 35, wallpaperBlur: 0, showClock: true, engine: '' };    let dial = [];
     let historyItems = [];
     let bookmarkItems = [];
 
@@ -132,7 +231,7 @@
         const dim = $('wp-dim');
         if (dim) dim.style.opacity = String((settings.wallpaperDim || 0) / 100);
 
-        const value = settings.wallpaper || 'preset:neon';
+const value = settings.wallpaper || 'preset:nebula';
         if (value === 'none') { layer.classList.add('wp-none'); return; }
         
         if (value.startsWith('preset:')) {
@@ -155,7 +254,7 @@
                 v.addEventListener('error', () => {
                     toast('That video could not be played.');
                     layer.replaceChildren();
-                    layer.className = 'wallpaper wp-neon';
+layer.className = 'wallpaper wp-nebula';
                 });
                 v.src = url;
                 layer.appendChild(v);
@@ -164,8 +263,7 @@
             } else {
                 const img = document.createElement('img');
                 img.alt = '';
-                img.addEventListener('error', () => { layer.replaceChildren(); layer.className = 'wallpaper wp-neon'; });
-                img.src = url;
+img.addEventListener('error', () => { layer.replaceChildren(); layer.className = 'wallpaper wp-nebula'; });                img.src = url;
                 layer.appendChild(img);
             }
         }
@@ -481,8 +579,7 @@
         const grid = $('wp-grid');
         if (!grid) return;
         grid.replaceChildren();
-        const current = settings.wallpaper || 'preset:neon';
-
+const current = settings.wallpaper || 'preset:nebula';
         // Presets
         for (const p of PRESETS) {
             const card = el('button', 'wp-card' + (current === p.value ? ' active' : ''));
@@ -596,19 +693,23 @@ if ($('hide-splash')) {
     // -------------------------------------------------------------------
     // Boot
     // -------------------------------------------------------------------
-    function applySettings(next) {
-        const wallpaperChanged = next.wallpaper !== settings.wallpaper
-            || next.wallpaperDim !== settings.wallpaperDim || next.wallpaperBlur !== settings.wallpaperBlur;
-        settings = next;
-        window.neiraTheme.apply(next);
-        window.neiraTheme.persist(next);
-        
-        if (wallpaperChanged) applyWallpaper();
-        if ($('clock')) $('clock').hidden = settings.showClock === false;
-        if ($('engine')) $('engine').value = settings.engine;
-        if (drawer && !drawer.hidden) { renderWallpaperGrid(); renderAccentSwatches(); syncDrawerControls(); }
+   function applySettings(next) {
+    if (LEGACY_WALLPAPERS[next.wallpaper]) {
+        const fixed = LEGACY_WALLPAPERS[next.wallpaper];
+        next = { ...next, wallpaper: fixed };
+        api.settings.set('wallpaper', fixed);   // save the migrated value
     }
+    const wallpaperChanged = next.wallpaper !== settings.wallpaper
+        || next.wallpaperDim !== settings.wallpaperDim || next.wallpaperBlur !== settings.wallpaperBlur;
+    settings = next;
+    window.neiraTheme.apply(next);
+    window.neiraTheme.persist(next);
 
+    if (wallpaperChanged) applyWallpaper();
+    if ($('clock')) $('clock').hidden = settings.showClock === false;
+    if ($('engine')) $('engine').value = settings.engine;
+    if (drawer && !drawer.hidden) { renderWallpaperGrid(); renderAccentSwatches(); syncDrawerControls(); }
+}
     async function init() {
         tick();
         if (qInput) qInput.focus();
@@ -623,7 +724,7 @@ if ($('hide-splash')) {
         if (b.status === 'fulfilled') bookmarkItems = b.value;
         
         // Default settings fallback
-        settings = { ...settings, wallpaper: 'preset:neon' };
+        settings = { ...settings, wallpaper: 'preset:nebula' };
         if (s.status === 'fulfilled') applySettings(s.value);
         else applyWallpaper();
         

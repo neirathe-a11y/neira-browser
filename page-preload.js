@@ -59,4 +59,5 @@ webFrame.executeJavaScript(`(() => {
             npnNegotiatedProtocol: 'h2', wasAlternateProtocolAvailable: false, connectionInfo: 'h2'
         });
     } catch (_) {}
-})()`);n
+     
+})()`);

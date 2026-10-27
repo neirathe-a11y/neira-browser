@@ -1,6 +1,7 @@
 'use strict';
 (() => {
     const api = window.neira;
+    
     const $ = id => document.getElementById(id);
     const root = document.documentElement;
     const isPdfTab = tab => /\.pdf([?#]|$)/i.test((tab && tab.url) || '');
@@ -4652,7 +4653,13 @@ on('downloads-btn', 'click', dlToggle);
     });
 }
         api.onSummarizeText(text => runSummary(text && text.trim() ? text : null));
-                       api.onOpenUrl((url, opts) => {
+                              api.onOpenUrl((url, opts) => {
+            // Route Google login through the safe popup
+            if (url.includes('accounts.google.com')) {
+                api.openGoogleLogin(url);
+                return;
+            }
+
             // a link/file that launched Neira replaces the empty start tab instead of sitting next to it
             const startTab = opts && opts.replaceStartTab && tabs.length === 1 && tabs[0].isNewtab ? tabs[0] : null;
             
@@ -4965,7 +4972,7 @@ on('downloads-btn', 'click', dlToggle);
         if (settings.hasSeenImport === true) return;
         if (!window.neiraImport || !window.neiraImport.open) return;
         setTimeout(() => {
-            try { window.neiraImport.open(); } catch (_) {}
+            try { window.neiraImport.open({ firstRun: true }); } catch (_) {}
         }, 350);
     }
 
